@@ -12,5 +12,7 @@ router.get('/companies', debugController.getCompanies);
 router.get('/locations', debugController.getLocations);
 router.get('/data-integrity', debugController.getDataIntegrity);
 router.get('/database-health', debugController.getDatabaseHealth);
+router.get('/data-quality', debugController.getDataQuality);
+router.get('/validate-stats', debugController.getValidateStats);
 
 module.exports = router;

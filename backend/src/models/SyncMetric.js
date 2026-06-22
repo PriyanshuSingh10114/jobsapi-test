@@ -27,7 +27,7 @@ const syncMetricSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
-// TTL Index: Automatically expire metric documents 30 days after creation
-syncMetricSchema.index({ createdAt: 1 }, { expireAfterSeconds: 2592000 });
+// TTL Index: Automatically expire metric documents 90 days after creation
+syncMetricSchema.index({ createdAt: 1 }, { expireAfterSeconds: 7776000 });
 
 module.exports = mongoose.model('SyncMetric', syncMetricSchema);

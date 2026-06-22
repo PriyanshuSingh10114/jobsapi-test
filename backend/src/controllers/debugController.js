@@ -184,3 +184,86 @@ exports.getDatabaseHealth = async (req, res, next) => {
     });
   } catch (err) { next(err); }
 };
+
+exports.getDataQuality = async (req, res, next) => {
+  try {
+    const totalJobs = await Job.countDocuments();
+    
+    // Aggregate by regions and types
+    const stats = await Job.aggregate([
+      {
+        $facet: {
+          regions: [{ $group: { _id: "$jobRegion", count: { $sum: 1 } } }],
+          types: [{ $group: { _id: "$jobType", count: { $sum: 1 } } }],
+          experience: [{ $group: { _id: "$experienceLevel", count: { $sum: 1 } } }]
+        }
+      }
+    ]);
+
+    const result = stats[0];
+    
+    let usJobs = 0;
+    let internationalRemoteJobs = 0;
+    let invalidForeignJobs = 0;
+    
+    result.regions.forEach(r => {
+      if (['US Onsite', 'US Hybrid', 'US Remote'].includes(r._id)) usJobs += r.count;
+      if (r._id === 'International Remote') internationalRemoteJobs += r.count;
+      if (r._id === 'Unknown') invalidForeignJobs += r.count;
+    });
+
+    let internships = 0;
+    let unknownEmploymentType = 0;
+    result.types.forEach(t => {
+      if (t._id === 'Internship') internships += t.count;
+      if (t._id === 'Unknown' || !t._id) unknownEmploymentType += t.count;
+    });
+
+    let newGradJobs = 0;
+    let unknownExperienceLevel = 0;
+    result.experience.forEach(e => {
+      if (e._id === 'Entry Level') newGradJobs += e.count; // Map Entry/New Grad to this bucket
+      if (e._id === 'Unknown' || !e._id) unknownExperienceLevel += e.count;
+    });
+
+    const uniqueHashes = await Job.distinct('jobHash');
+    const duplicatesDetected = totalJobs - uniqueHashes.length;
+
+    res.json({
+      success: true,
+      data: {
+        totalJobs,
+        usJobs,
+        internationalRemoteJobs,
+        invalidForeignJobs,
+        internships,
+        newGradJobs, // Approximation of Entry Level
+        unknownEmploymentType,
+        unknownExperienceLevel,
+        duplicatesDetected
+      }
+    });
+  } catch (err) { next(err); }
+};
+
+exports.getValidateStats = async (req, res, next) => {
+  try {
+    const { buildJobFilter } = require('../utils/filterBuilder');
+    const rawTotal = await Job.countDocuments();
+    
+    const filter = buildJobFilter({});
+    const searchAggregationCountArr = await Job.aggregate([
+      { $match: filter },
+      { $count: 'total' }
+    ]);
+    const searchCount = searchAggregationCountArr[0] ? searchAggregationCountArr[0].total : 0;
+
+    res.json({
+      success: true,
+      statsEndpointCount: rawTotal,
+      searchEndpointCount: searchCount,
+      mismatch: rawTotal - searchCount,
+      status: rawTotal === searchCount ? 'MATCH' : 'MISMATCH'
+    });
+  } catch (err) { next(err); }
+};

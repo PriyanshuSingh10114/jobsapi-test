@@ -19,8 +19,7 @@ const jobSchema = new mongoose.Schema({
   },
   applyUrl: {
     type: String,
-    required: true,
-    unique: true
+    required: true
   },
   description: {
     type: String,
@@ -34,11 +33,11 @@ const jobSchema = new mongoose.Schema({
   },
   jobType: {
     type: String,
-    default: 'Full-time',
+    default: 'Full Time',
   },
   experienceLevel: {
     type: String,
-    default: 'Mid Level',
+    default: 'Unknown',
   },
   jobRegion: {
     type: String,
@@ -69,7 +68,8 @@ const jobSchema = new mongoose.Schema({
   },
   jobHash: {
     type: String,
-    required: true
+    required: true,
+    unique: true
   }
 }, { timestamps: true });
 
@@ -88,6 +88,7 @@ jobSchema.index({ state: 1 });
 jobSchema.index({ jobType: 1 });
 jobSchema.index({ isRemote: 1 });
 jobSchema.index({ jobRegion: 1, remote: 1, postedAt: -1 });
+jobSchema.index({ jobType: 1, experienceLevel: 1, jobRegion: 1 });
 jobSchema.index({ source: 1, postedAt: -1 });
 jobSchema.index({ createdAt: -1 });
 

@@ -100,8 +100,50 @@ const extractSalary = (text) => {
   return null;
 };
 
+const extractExperienceLevel = (title, description, rawLevel) => {
+  const t = (title || '').toLowerCase();
+  
+  if (t.includes('intern') || t.includes('co-op') || t.includes('apprentice') || t.includes('new grad') || t.includes('entry level') || t.includes('junior') || t.includes(' jr ') || t.match(/\bjr\b/)) return 'Entry Level';
+  if (t.includes('senior') || t.includes(' sr ') || t.match(/\bsr\b/) || t.includes('staff') || t.includes('principal') || t.includes('architect')) return 'Senior';
+  if (t.includes('lead') || t.includes('manager') || t.includes('director') || t.match(/\bvp\b/) || t.includes('head') || t.includes('chief')) return 'Leadership';
+  if (t.includes('mid level') || t.match(/\bii\b/) || t.match(/\biii\b/)) return 'Mid Level';
+
+  if (rawLevel) {
+    const rl = rawLevel.toLowerCase();
+    if (rl.includes('intern') || rl.includes('entry') || rl.includes('junior') || rl.includes('new grad')) return 'Entry Level';
+    if (rl.includes('senior') || rl.includes('staff') || rl.includes('principal') || rl.includes('architect')) return 'Senior';
+    if (rl.includes('lead') || rl.includes('manager') || rl.includes('director') || rl.includes('executive')) return 'Leadership';
+    if (rl.includes('mid')) return 'Mid Level';
+  }
+
+  return 'Unknown';
+};
+
+const extractEmploymentType = (title, description, rawType) => {
+  const t = (title || '').toLowerCase();
+  
+  if (t.includes('intern') || t.includes('co-op') || t.includes('apprentice')) return 'Internship';
+  if (t.includes('contract') || t.includes('freelance')) return 'Contract';
+  if (t.includes('part time') || t.includes('part-time')) return 'Part Time';
+  if (t.includes('temporary')) return 'Temporary';
+  if (t.includes('full time') || t.includes('full-time')) return 'Full Time';
+  
+  if (rawType) {
+    const rt = rawType.toLowerCase();
+    if (rt.includes('intern') || rt.includes('co-op') || rt.includes('apprentice')) return 'Internship';
+    if (rt.includes('contract') || rt.includes('freelance')) return 'Contract';
+    if (rt.includes('part')) return 'Part Time';
+    if (rt.includes('temp')) return 'Temporary';
+    if (rt.includes('full')) return 'Full Time';
+  }
+
+  return 'Full Time'; // Safe fallback
+};
+
 module.exports = {
   extractState,
   extractSkills,
-  extractSalary
+  extractSalary,
+  extractExperienceLevel,
+  extractEmploymentType
 };

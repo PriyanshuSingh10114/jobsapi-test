@@ -2,8 +2,8 @@ const Job = require('../models/Job');
 const Source = require('../models/Source');
 const SyncMetric = require('../models/SyncMetric');
 const logger = require('../config/logger');
-const { classifyJobRegion, isUSLocation, getCountry, normalizeLocation } = require('../utils/locationHelper');
-const { extractSkills, extractSalary, extractState } = require('../utils/dataExtractor');
+const { isAllowedForUSPlatform, classifyJobRegion, isUSLocation, getCountry, normalizeLocation } = require('../utils/locationHelper');
+const { extractSkills, extractSalary, extractState, extractExperienceLevel, extractEmploymentType } = require('../utils/dataExtractor');
 const { generateJobHash } = require('../utils/hashHelper');
 
 const arbeitnowService = require('./arbeitnow.service');
@@ -53,9 +53,19 @@ const syncJobsForSource = async (sourceName) => {
     let companiesScanned = result.companiesScanned || 0;
     let companiesFailed = result.companiesFailed || 0;
 
-    // Do not filter out jobs, just assign properties
-    jobs = jobs.map((job) => {
+    let skippedJobsCount = 0;
+    const bulkOps = [];
+
+    // Filter and Process
+    for (let job of jobs) {
       const normalizedLocation = normalizeLocation(job.location);
+      
+      // EXPLICIT US JOB PLATFORM RULE
+      if (!isAllowedForUSPlatform(normalizedLocation, job.remote, job.title)) {
+        skippedJobsCount++;
+        continue;
+      }
+
       job.location = normalizedLocation;
       job.jobRegion = classifyJobRegion(normalizedLocation, job.remote, job.title);
       job.isUSJob = isUSLocation(normalizedLocation);
@@ -65,6 +75,8 @@ const syncJobsForSource = async (sourceName) => {
       // Deep Data Extraction
       const fullText = `${job.title || ''} ${job.description || ''}`;
       job.skills = extractSkills(fullText);
+      job.experienceLevel = extractExperienceLevel(job.title, job.description, job.experienceLevel);
+      job.jobType = extractEmploymentType(job.title, job.description, job.jobType);
 
       const salaryInfo = extractSalary(fullText);
       if (salaryInfo) {
@@ -73,24 +85,17 @@ const syncJobsForSource = async (sourceName) => {
 
       job.state = extractState(job.location);
 
-      return job;
-    });
-
-    let skippedJobsCount = 0;
-    const bulkOps = [];
-
-    for (const jobData of jobs) {
-      if (!jobData.applyUrl && !jobData.title) {
+      if (!job.applyUrl && !job.title) {
         skippedJobsCount++;
         continue;
       }
 
-      jobData.jobHash = generateJobHash(jobData.company, jobData.title, jobData.location, jobData.source);
+      job.jobHash = generateJobHash(job.company, job.title, job.location, job.source);
 
       bulkOps.push({
         updateOne: {
-          filter: { jobHash: jobData.jobHash },
-          update: { $set: jobData },
+          filter: { jobHash: job.jobHash },
+          update: { $set: job },
           upsert: true
         }
       });

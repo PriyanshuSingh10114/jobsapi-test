@@ -81,4 +81,19 @@ const normalizeLocation = (locationString) => {
   return locationString.trim();
 };
 
-module.exports = { isUSLocation, classifyJobRegion, getCountry, normalizeLocation };
+const isAllowedForUSPlatform = (locationString, isRemote, titleString = '') => {
+  const loc = (locationString || '').toLowerCase();
+  
+  // Explicitly allow global remote roles
+  if (loc.includes('worldwide') || loc.includes('global') || loc.includes('anywhere')) {
+    return true;
+  }
+  
+  const region = classifyJobRegion(locationString, isRemote, titleString);
+  
+  // Reject 'Unknown' which represents non-US onsite/hybrid jobs
+  const allowedRegions = ['US Onsite', 'US Hybrid', 'US Remote', 'International Remote'];
+  return allowedRegions.includes(region);
+};
+
+module.exports = { isAllowedForUSPlatform, isUSLocation, classifyJobRegion, getCountry, normalizeLocation };
