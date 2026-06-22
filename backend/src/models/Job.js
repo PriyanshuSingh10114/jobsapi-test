@@ -40,6 +40,23 @@ const jobSchema = new mongoose.Schema({
   experienceLevel: {
     type: String,
     default: 'Mid Level',
+  },
+  jobRegion: {
+    type: String,
+    enum: ['US Onsite', 'US Hybrid', 'US Remote', 'International Remote'],
+    required: true
+  },
+  skills: {
+    type: [String],
+    default: [],
+  },
+  salary: {
+    min: Number,
+    max: Number,
+    average: Number,
+  },
+  state: {
+    type: String,
   }
 }, { timestamps: true });
 
@@ -55,5 +72,8 @@ jobSchema.index({ company: 1 });
 jobSchema.index({ source: 1 });
 jobSchema.index({ remote: 1 });
 jobSchema.index({ location: 1 });
+jobSchema.index({ jobRegion: 1 });
+jobSchema.index({ skills: 1 });
+jobSchema.index({ state: 1 });
 
 module.exports = mongoose.model('Job', jobSchema);

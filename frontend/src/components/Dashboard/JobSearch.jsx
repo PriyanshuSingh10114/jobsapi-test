@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { Search, MapPin, Briefcase, Globe, Filter, Building, Calendar, Award, Database } from 'lucide-react';
+import { Search, MapPin, Briefcase, Filter, Building, Calendar, Award, Database, Globe } from 'lucide-react';
 import { getSuggestions } from '../../services/api';
 
 const QUICK_ROLES = [
-  'Software Engineer', 'Frontend Engineer', 'Backend Engineer', 
-  'Full Stack', 'Data Scientist', 'ML Engineer', 'DevOps', 'Product Manager'
+  'Software Engineer', 'Frontend Engineer', 'Backend Engineer',
+  'Full Stack Engineer', 'Data Scientist', 'ML Engineer',
+  'DevOps Engineer', 'Product Manager'
 ];
 
 const SOURCES = ['Arbeitnow', 'Remotive', 'Greenhouse', 'Lever', 'Ashby', 'USAJobs', 'TheMuse'];
@@ -15,10 +16,11 @@ const JobSearch = ({ onSearch, isSearching }) => {
     if (saved) return JSON.parse(saved);
     return {
       role: '',
-      location: '',
+      location: 'United States',
       company: '',
       jobType: '',
       experienceLevel: '',
+      jobRegion: 'US Jobs',
       remote: false,
       source: '',
       datePosted: ''
@@ -112,7 +114,7 @@ const JobSearch = ({ onSearch, isSearching }) => {
           </div>
 
           {/* Location Input */}
-          <div className="flex-1 w-full">
+          <div className="flex-1 w-full relative">
             <label className="block text-sm font-medium text-slate-700 mb-1">Where</label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -128,6 +130,7 @@ const JobSearch = ({ onSearch, isSearching }) => {
             </div>
           </div>
 
+          {/* Job Type Dropdown */}
           <div className="w-full md:w-48">
             <label className="block text-sm font-medium text-slate-700 mb-1">Job Type</label>
             <div className="relative">
@@ -140,10 +143,10 @@ const JobSearch = ({ onSearch, isSearching }) => {
                 className="block w-full pl-10 pr-8 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-slate-900 bg-slate-50 focus:bg-white transition-colors outline-none appearance-none"
               >
                 <option value="">Any Type</option>
-                <option value="full-time">Full-Time</option>
-                <option value="part-time">Part-Time</option>
-                <option value="contract">Contract</option>
-                <option value="internship">Internship</option>
+                <option value="Full Time">Full-Time</option>
+                <option value="Part Time">Part-Time</option>
+                <option value="Contract">Contract</option>
+                <option value="Internship">Internship</option>
               </select>
             </div>
           </div>
@@ -191,7 +194,7 @@ const JobSearch = ({ onSearch, isSearching }) => {
                 key={role}
                 type="button"
                 onClick={() => applyQuickRole(role)}
-                className="text-xs px-3 py-1.5 bg-slate-50 text-slate-600 rounded-full border border-slate-200 hover:bg-primary-50 hover:text-primary-600 hover:border-primary-200 transition-colors"
+                className="text-xs px-3 py-1.5 bg-slate-50 text-slate-600 rounded-full border border-slate-200 hover:bg-primary-50 hover:text-primary-600 hover:border-primary-200 transition-colors font-medium"
               >
                 {role}
               </button>
@@ -211,6 +214,19 @@ const JobSearch = ({ onSearch, isSearching }) => {
                 placeholder="e.g. Google"
                 className="block w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
               />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1 flex items-center gap-1"><Globe size={12}/> Job Region</label>
+              <select
+                value={filters.jobRegion}
+                onChange={(e) => handleChange('jobRegion', e.target.value)}
+                className="block w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
+              >
+                <option value="All Jobs">All Jobs</option>
+                <option value="US Jobs">US Jobs</option>
+                <option value="US Remote">US Remote</option>
+                <option value="International Remote">International Remote</option>
+              </select>
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1 flex items-center gap-1"><Award size={12}/> Experience Level</label>

@@ -37,4 +37,22 @@ const isUSLocation = (locationString) => {
   return false;
 };
 
-module.exports = { isUSLocation };
+const classifyJobRegion = (locationString, isRemote, titleString = '') => {
+  const isUS = isUSLocation(locationString);
+  const title = titleString.toLowerCase();
+  const loc = (locationString || '').toLowerCase();
+  const isHybrid = title.includes('hybrid') || loc.includes('hybrid');
+
+  if (isUS) {
+    if (isRemote) return 'US Remote';
+    if (isHybrid) return 'US Hybrid';
+    return 'US Onsite';
+  } else {
+    // Non-US
+    if (isRemote) return 'International Remote';
+    // If it's non-US onsite or hybrid, we drop it.
+    return null; 
+  }
+};
+
+module.exports = { isUSLocation, classifyJobRegion };

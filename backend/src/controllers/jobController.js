@@ -51,10 +51,22 @@ exports.searchJobs = async (req, res, next) => {
   try {
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 20;
-    const { role, location, company, jobType, experienceLevel, remote, source, datePosted, sort } = req.query;
+    const { role, location, company, jobType, experienceLevel, remote, source, datePosted, sort, jobRegion } = req.query;
 
     const query = {};
     const andConditions = [];
+
+    // Job Region Filtering
+    if (jobRegion && jobRegion !== 'All Jobs') {
+      if (jobRegion === 'US Jobs') {
+        andConditions.push({ jobRegion: { $in: ['US Onsite', 'US Hybrid', 'US Remote'] } });
+      } else {
+        andConditions.push({ jobRegion });
+      }
+    } else if (!jobRegion) {
+      // Default to US Jobs if no parameter is provided
+      andConditions.push({ jobRegion: { $in: ['US Onsite', 'US Hybrid', 'US Remote'] } });
+    }
 
     // Use text search for role
     if (role) {

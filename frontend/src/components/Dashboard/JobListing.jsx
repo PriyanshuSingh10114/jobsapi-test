@@ -102,9 +102,14 @@ const JobListing = ({ searchParams, onSearchStateChange }) => {
                         {job.experienceLevel}
                       </span>
                     )}
-                    {job.remote && (
-                      <span className="bg-green-50 text-green-700 px-2.5 py-1 rounded-md flex items-center gap-1">
-                        <Globe size={12} /> Remote
+                    {job.jobRegion && (
+                      <span className={`px-2.5 py-1 rounded-md flex items-center gap-1 ${
+                        job.jobRegion === 'US Remote' ? 'bg-emerald-50 text-emerald-700' :
+                        job.jobRegion === 'International Remote' ? 'bg-purple-50 text-purple-700' :
+                        job.jobRegion === 'US Hybrid' ? 'bg-indigo-50 text-indigo-700' :
+                        'bg-slate-100 text-slate-700'
+                      }`}>
+                        <Globe size={12} /> {job.jobRegion}
                       </span>
                     )}
                     <span className="bg-slate-50 border border-slate-100 text-slate-500 px-2.5 py-1 rounded-md text-[10px] uppercase tracking-wider">

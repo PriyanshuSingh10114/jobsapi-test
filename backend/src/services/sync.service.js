@@ -1,7 +1,8 @@
 const Job = require('../models/Job');
 const Source = require('../models/Source');
 const logger = require('../config/logger');
-const { isUSLocation } = require('../utils/locationHelper');
+const { classifyJobRegion } = require('../utils/locationHelper');
+const { extractSkills, extractSalary, extractState } = require('../utils/dataExtractor');
 
 const arbeitnowService = require('./arbeitnow.service');
 const remotiveService = require('./remotive.service');
@@ -32,8 +33,27 @@ const syncJobsForSource = async (sourceName) => {
     const fetchFunc = services[sourceName];
     let jobs = await fetchFunc();
 
-    // Filter to US-oriented jobs only
-    jobs = jobs.filter(job => isUSLocation(job.location));
+    // Filter and assign jobRegion, plus extract deep data
+    jobs = jobs.reduce((acc, job) => {
+      const region = classifyJobRegion(job.location, job.remote, job.title);
+      if (region) {
+        job.jobRegion = region;
+        
+        // Deep Data Extraction
+        const fullText = `${job.title || ''} ${job.description || ''}`;
+        job.skills = extractSkills(fullText);
+        
+        const salaryInfo = extractSalary(fullText);
+        if (salaryInfo) {
+          job.salary = salaryInfo;
+        }
+        
+        job.state = extractState(job.location);
+
+        acc.push(job);
+      }
+      return acc;
+    }, []);
 
     let newJobsCount = 0;
     let updatedJobsCount = 0;

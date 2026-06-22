@@ -1,0 +1,107 @@
+const usStatesAndAbbreviations = {
+  'Alabama': 'AL', 'Alaska': 'AK', 'Arizona': 'AZ', 'Arkansas': 'AR', 'California': 'CA',
+  'Colorado': 'CO', 'Connecticut': 'CT', 'Delaware': 'DE', 'Florida': 'FL', 'Georgia': 'GA',
+  'Hawaii': 'HI', 'Idaho': 'ID', 'Illinois': 'IL', 'Indiana': 'IN', 'Iowa': 'IA',
+  'Kansas': 'KS', 'Kentucky': 'KY', 'Louisiana': 'LA', 'Maine': 'ME', 'Maryland': 'MD',
+  'Massachusetts': 'MA', 'Michigan': 'MI', 'Minnesota': 'MN', 'Mississippi': 'MS', 'Missouri': 'MO',
+  'Montana': 'MT', 'Nebraska': 'NE', 'Nevada': 'NV', 'New Hampshire': 'NH', 'New Jersey': 'NJ',
+  'New Mexico': 'NM', 'New York': 'NY', 'North Carolina': 'NC', 'North Dakota': 'ND', 'Ohio': 'OH',
+  'Oklahoma': 'OK', 'Oregon': 'OR', 'Pennsylvania': 'PA', 'Rhode Island': 'RI', 'South Carolina': 'SC',
+  'South Dakota': 'SD', 'Tennessee': 'TN', 'Texas': 'TX', 'Utah': 'UT', 'Vermont': 'VT',
+  'Virginia': 'VA', 'Washington': 'WA', 'West Virginia': 'WV', 'Wisconsin': 'WI', 'Wyoming': 'WY',
+  'AL': 'AL', 'AK': 'AK', 'AZ': 'AZ', 'AR': 'AR', 'CA': 'CA', 'CO': 'CO', 'CT': 'CT', 'DE': 'DE',
+  'FL': 'FL', 'GA': 'GA', 'HI': 'HI', 'ID': 'ID', 'IL': 'IL', 'IN': 'IN', 'IA': 'IA', 'KS': 'KS',
+  'KY': 'KY', 'LA': 'LA', 'ME': 'ME', 'MD': 'MD', 'MA': 'MA', 'MI': 'MI', 'MN': 'MN', 'MS': 'MS',
+  'MO': 'MO', 'MT': 'MT', 'NE': 'NE', 'NV': 'NV', 'NH': 'NH', 'NJ': 'NJ', 'NM': 'NM', 'NY': 'NY',
+  'NC': 'NC', 'ND': 'ND', 'OH': 'OH', 'OK': 'OK', 'OR': 'OR', 'PA': 'PA', 'RI': 'RI', 'SC': 'SC',
+  'SD': 'SD', 'TN': 'TN', 'TX': 'TX', 'UT': 'UT', 'VT': 'VT', 'VA': 'VA', 'WA': 'WA', 'WV': 'WV',
+  'WI': 'WI', 'WY': 'WY'
+};
+
+const COMMON_SKILLS = [
+  'React', 'Node.js', 'Python', 'Java', 'AWS', 'Docker', 'Kubernetes', 'SQL', 
+  'Machine Learning', 'TypeScript', 'Angular', 'Vue', 'C++', 'C#', 'Go', 
+  'Ruby', 'PHP', 'Azure', 'GCP', 'PostgreSQL', 'MongoDB', 'Redis', 'Elasticsearch',
+  'GraphQL', 'Spring Boot', 'Django', 'Flask', 'TensorFlow', 'PyTorch', 'Spark',
+  'Hadoop', 'Kafka', 'Terraform', 'Ansible', 'Jenkins', 'CI/CD', 'Linux',
+  'Agile', 'Scrum', 'Product Management', 'Data Analysis', 'Tableau', 'Power BI'
+];
+
+const extractState = (locationString) => {
+  if (!locationString) return null;
+  const loc = locationString.replace(/,/g, ' ');
+  const words = loc.split(/\s+/);
+  
+  for (const word of words) {
+    const cleanWord = word.trim();
+    if (usStatesAndAbbreviations[cleanWord]) {
+      return usStatesAndAbbreviations[cleanWord];
+    }
+  }
+  return null;
+};
+
+const extractSkills = (text) => {
+  if (!text) return [];
+  const foundSkills = [];
+  const lowerText = text.toLowerCase();
+  
+  for (const skill of COMMON_SKILLS) {
+    // Simple word boundary check for skills to avoid partial matches
+    // Note: special characters like C++ or Node.js need careful regex or just includes for simplicity
+    const isSpecial = skill.includes('+') || skill.includes('.');
+    if (isSpecial) {
+      if (lowerText.includes(skill.toLowerCase())) {
+        foundSkills.push(skill);
+      }
+    } else {
+      const regex = new RegExp(`\\b${skill}\\b`, 'i');
+      if (regex.test(lowerText)) {
+        foundSkills.push(skill);
+      }
+    }
+  }
+  return foundSkills;
+};
+
+const extractSalary = (text) => {
+  if (!text) return null;
+  // Look for patterns like $100k, $100,000, 100k-150k
+  const matches = text.match(/\$[0-9]{2,3}(?:,[0-9]{3}|k)\s*(?:-|to|and)\s*\$[0-9]{2,3}(?:,[0-9]{3}|k)/gi);
+  if (matches && matches.length > 0) {
+    const match = matches[0];
+    const numbers = match.match(/[0-9]{2,3}(?:,[0-9]{3}|k)?/gi);
+    if (numbers && numbers.length === 2) {
+      const parseNum = (str) => {
+        let n = parseInt(str.replace(/,/g, '').replace(/k/i, '000'), 10);
+        if (str.toLowerCase().includes('k')) n = parseInt(str.replace(/k/i, ''), 10) * 1000;
+        return n;
+      };
+      const min = parseNum(numbers[0]);
+      const max = parseNum(numbers[1]);
+      return { min, max, average: (min + max) / 2 };
+    }
+  }
+  
+  // Single salary
+  const singleMatch = text.match(/\$[0-9]{2,3}(?:,[0-9]{3}|k)/i);
+  if (singleMatch) {
+    const parseNum = (str) => {
+      let n = parseInt(str.replace(/\$/g, '').replace(/,/g, '').replace(/k/i, '000'), 10);
+      if (str.toLowerCase().includes('k')) n = parseInt(str.replace(/\$/g, '').replace(/k/i, ''), 10) * 1000;
+      return n;
+    };
+    const val = parseNum(singleMatch[0]);
+    if (val > 20000 && val < 1000000) {
+      return { min: val, max: val, average: val };
+    }
+  }
+  
+  return null;
+};
+
+module.exports = {
+  extractState,
+  extractSkills,
+  extractSalary
+};

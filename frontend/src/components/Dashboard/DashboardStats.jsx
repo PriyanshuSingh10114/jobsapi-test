@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { fetchStats } from '../../services/api';
-import { Briefcase, Building2, Globe, Clock, GraduationCap, CheckCircle } from 'lucide-react';
+import { Briefcase, Building2, Globe, Clock, CalendarPlus } from 'lucide-react';
 
 const StatCard = ({ icon: Icon, label, value, colorClass, bgColorClass }) => (
   <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col gap-3 justify-center transition-all hover:shadow-md">
@@ -31,7 +31,7 @@ const DashboardStats = () => {
   };
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
       <StatCard 
         icon={Briefcase} 
         label="Total Jobs" 
@@ -41,38 +41,31 @@ const DashboardStats = () => {
       />
       <StatCard 
         icon={Building2} 
-        label="Companies" 
+        label="Total Companies" 
         value={stats?.totalCompanies?.toLocaleString() || 0} 
         colorClass="text-purple-600"
         bgColorClass="bg-purple-50"
       />
       <StatCard 
         icon={Globe} 
-        label="Remote Roles" 
+        label="Remote Jobs" 
         value={stats?.remoteJobs?.toLocaleString() || 0} 
-        colorClass="text-green-600"
-        bgColorClass="bg-green-50"
+        colorClass="text-emerald-600"
+        bgColorClass="bg-emerald-50"
       />
       <StatCard 
-        icon={CheckCircle} 
-        label="Full-Time" 
-        value={stats?.fullTimeJobs?.toLocaleString() || 0} 
+        icon={CalendarPlus} 
+        label="New Jobs Today" 
+        value={stats?.newJobsToday?.toLocaleString() || 0} 
         colorClass="text-indigo-600"
         bgColorClass="bg-indigo-50"
-      />
-      <StatCard 
-        icon={GraduationCap} 
-        label="Internships" 
-        value={stats?.internships?.toLocaleString() || 0} 
-        colorClass="text-pink-600"
-        bgColorClass="bg-pink-50"
       />
       <StatCard 
         icon={Clock} 
         label="Last Sync" 
         value={formatTime(stats?.lastSyncTime)} 
-        colorClass="text-orange-600"
-        bgColorClass="bg-orange-50"
+        colorClass="text-slate-600"
+        bgColorClass="bg-slate-50"
       />
     </div>
   );
