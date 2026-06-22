@@ -1,10 +1,17 @@
 const Job = require('../models/Job');
 const Source = require('../models/Source');
+const { buildJobFilter } = require('../utils/filterBuilder');
+const logger = require('../config/logger');
 
 exports.getStats = async (req, res, next) => {
   try {
-    const totalJobs = await Job.countDocuments();
-    const remoteJobs = await Job.countDocuments({ remote: true });
+    const baseFilter = buildJobFilter({});
+    const totalJobs = await Job.countDocuments(baseFilter);
+    const searchFilterRaw = await Job.countDocuments(); // Raw count for log
+    
+    logger.info(`Stats Validation -> Base Count: ${totalJobs}, Raw Total DB Count: ${searchFilterRaw}`);
+
+    const remoteJobs = await Job.countDocuments({ ...baseFilter, remote: true });
     
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());

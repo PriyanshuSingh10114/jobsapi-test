@@ -6,14 +6,7 @@ const fetchJobs = async () => {
   const userEmail = process.env.USAJOBS_EMAIL || 'admin@example.com';
 
   if (!apiKey) {
-    logger.warn('=============================================');
-    logger.warn('USAJOBS_API_KEY is missing!');
-    logger.warn('To enable USAJobs sync, please register at:');
-    logger.warn('https://developer.usajobs.gov/APIRequest/Index');
-    logger.warn('Set USAJOBS_API_KEY and USAJOBS_EMAIL in your .env');
-    logger.warn('Gracefully skipping USAJobs ingestion...');
-    logger.warn('=============================================');
-    return [];
+    throw new Error('USAJOBS_API_KEY is missing. Registration required at developer.usajobs.gov');
   }
 
   try {

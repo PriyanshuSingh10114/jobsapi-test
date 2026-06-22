@@ -1,17 +1,14 @@
 const Job = require('../models/Job');
 const { syncAll } = require('../services/sync.service');
+const { buildJobFilter } = require('../utils/filterBuilder');
 const logger = require('../config/logger');
 
 exports.getJobs = async (req, res, next) => {
   try {
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 20;
-    const source = req.query.source;
-    const remote = req.query.remote;
 
-    const query = {};
-    if (source) query.source = source;
-    if (remote !== undefined) query.remote = remote === 'true';
+    const query = buildJobFilter(req.query);
 
     const startIndex = (page - 1) * limit;
     
@@ -51,80 +48,9 @@ exports.searchJobs = async (req, res, next) => {
   try {
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 20;
-    const { role, location, company, jobType, experienceLevel, remote, source, datePosted, sort, jobRegion, skills } = req.query;
+    const { sort } = req.query;
 
-    const query = {};
-    const andConditions = [];
-
-    // Job Region Filtering
-    if (jobRegion && jobRegion !== 'All Jobs') {
-      if (jobRegion === 'US Jobs') {
-        andConditions.push({ jobRegion: { $in: ['US Onsite', 'US Hybrid', 'US Remote'] } });
-      } else {
-        andConditions.push({ jobRegion });
-      }
-    } else if (!jobRegion) {
-      // Default to US Jobs and International Remote if no parameter is provided
-      // Excludes 'Unknown' which represents non-US onsite/hybrid jobs.
-      andConditions.push({ jobRegion: { $in: ['US Onsite', 'US Hybrid', 'US Remote', 'International Remote'] } });
-    }
-
-    // Use text search for role and skills
-    let textSearchStr = '';
-    if (role) textSearchStr += role + ' ';
-    if (skills) textSearchStr += skills;
-    
-    if (textSearchStr.trim()) {
-      query.$text = { $search: textSearchStr.trim() };
-    }
-
-    if (company) {
-      andConditions.push({ company: { $regex: new RegExp(company, 'i') } });
-    }
-
-    if (location) {
-      andConditions.push({ location: { $regex: new RegExp(location, 'i') } });
-    }
-
-    if (jobType) {
-      const parsedJobType = jobType.replace(/-/g, ' ');
-      andConditions.push({
-        $or: [
-          { jobType: { $regex: new RegExp(parsedJobType, 'i') } },
-          { title: { $regex: new RegExp(parsedJobType, 'i') } }
-        ]
-      });
-    }
-
-    if (experienceLevel) {
-      andConditions.push({ experienceLevel: { $regex: new RegExp(experienceLevel, 'i') } });
-    }
-
-    if (remote === 'true') {
-      andConditions.push({ remote: true });
-    }
-
-    if (source) {
-      andConditions.push({ source: { $regex: new RegExp(`^${source}$`, 'i') } });
-    }
-
-    if (datePosted) {
-      const date = new Date();
-      if (datePosted === 'Past 24 hours') {
-        date.setDate(date.getDate() - 1);
-        andConditions.push({ postedAt: { $gte: date } });
-      } else if (datePosted === 'Past Week') {
-        date.setDate(date.getDate() - 7);
-        andConditions.push({ postedAt: { $gte: date } });
-      } else if (datePosted === 'Past Month') {
-        date.setMonth(date.getMonth() - 1);
-        andConditions.push({ postedAt: { $gte: date } });
-      }
-    }
-
-    if (andConditions.length > 0) {
-      query.$and = andConditions;
-    }
+    const query = buildJobFilter(req.query);
 
     // Determine sort
     let sortOption = { postedAt: -1 }; // default Newest First

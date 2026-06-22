@@ -89,7 +89,7 @@ const syncJobsForSource = async (sourceName) => {
 
       bulkOps.push({
         updateOne: {
-          filter: { jobHash: jobData.jobHash },
+          filter: { applyUrl: jobData.applyUrl },
           update: { $set: jobData },
           upsert: true
         }

@@ -1,7 +1,7 @@
 const axios = require('axios');
 const logger = require('../config/logger');
 
-const recruiteeCompanies = ['hotjar', 'usabilla'];
+const recruiteeCompanies = ['bunq'];
 
 const fetchJobsForCompany = async (company) => {
   try {

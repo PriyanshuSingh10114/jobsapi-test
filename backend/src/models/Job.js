@@ -20,6 +20,7 @@ const jobSchema = new mongoose.Schema({
   applyUrl: {
     type: String,
     required: true,
+    unique: true
   },
   description: {
     type: String,

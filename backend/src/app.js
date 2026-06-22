@@ -20,12 +20,14 @@ const sourceRoutes = require('./routes/sourceRoutes');
 const jobRoutes = require('./routes/jobRoutes');
 const statRoutes = require('./routes/statRoutes');
 const debugRoutes = require('./routes/debug.routes');
+const adminRoutes = require('./routes/admin.routes');
 
 // Routes
 app.use('/api/sources', sourceRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/stats', statRoutes);
 app.use('/api/debug', debugRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Swagger UI
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));
