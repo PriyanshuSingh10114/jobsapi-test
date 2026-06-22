@@ -25,17 +25,30 @@ const fetchJobsForCompany = async (companyToken) => {
 };
 
 const ashbyCompanies = require('../data/ashby_companies');
+const pLimit = require('../utils/concurrency');
+const fs = require('fs');
+const path = require('path');
 
 const fetchJobs = async () => {
   const companies = ashbyCompanies;
   let allJobs = [];
   let companiesFailed = 0;
 
-  for (const company of companies) {
-    const companyJobs = await fetchJobsForCompany(company.trim());
-    if (companyJobs.length === 0) companiesFailed++;
-    allJobs = allJobs.concat(companyJobs);
-  }
+  const limit = pLimit(10);
+  const logPath = path.join(process.cwd(), 'ashby_failed_companies.log');
+
+  const promises = companies.map(company => limit(async () => {
+    const companyTrimmed = company.trim();
+    const companyJobs = await fetchJobsForCompany(companyTrimmed);
+    if (companyJobs.length === 0) {
+      companiesFailed++;
+      fs.appendFileSync(logPath, `${new Date().toISOString()} - {"company":"${companyTrimmed}","status":404}\n`);
+    } else {
+      allJobs.push(...companyJobs);
+    }
+  }));
+
+  await Promise.all(promises);
 
   return { jobs: allJobs, companiesScanned: companies.length, companiesFailed };
 };

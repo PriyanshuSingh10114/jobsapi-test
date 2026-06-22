@@ -1,4 +1,29 @@
+const SyncMetric = require('../models/SyncMetric');
 const Job = require('../models/Job');
+
+exports.getPerformance = async (req, res, next) => {
+  try {
+    const metrics = await SyncMetric.find().sort({ createdAt: -1 }).limit(100);
+    if (!metrics.length) return res.json({ message: "No metrics available" });
+
+    const recentMetrics = metrics.slice(0, 20); // Analyzing most recent run across sources roughly
+    
+    // Calculate average duration across all sources
+    const avgDuration = recentMetrics.reduce((acc, m) => acc + m.durationMs, 0) / recentMetrics.length;
+    
+    const sorted = [...recentMetrics].sort((a, b) => b.durationMs - a.durationMs);
+    const slowestSource = sorted[0];
+    const fastestSource = sorted[sorted.length - 1];
+    
+    res.json({
+      averageSyncTime: `${(avgDuration / 1000).toFixed(1)}s per source`,
+      slowestSource: `${slowestSource.source} (${slowestSource.duration})`,
+      fastestSource: `${fastestSource.source} (${fastestSource.duration})`,
+      lastSync: slowestSource.createdAt,
+      recentMetrics
+    });
+  } catch (err) { next(err); }
+};
 
 exports.getCount = async (req, res, next) => {
   try {
