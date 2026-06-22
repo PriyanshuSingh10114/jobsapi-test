@@ -66,6 +66,8 @@ exports.searchJobs = async (req, res, next) => {
       .skip(startIndex)
       .limit(limit);
 
+    logger.info(`Search Count: ${total}`);
+
     res.json({
       success: true,
       count: jobs.length,

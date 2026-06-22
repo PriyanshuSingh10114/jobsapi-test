@@ -6,12 +6,24 @@ const leverCompanies = require('../data/lever_companies');
 const fs = require('fs');
 const path = require('path');
 
-const fetchJobsForCompany = async (companyToken) => {
+const validateLeverCompany = async (companyToken) => {
+  logger.info(`[Lever] Testing company: ${companyToken}`);
   try {
     const response = await axios.get(`https://api.lever.co/v0/postings/${companyToken}?mode=json`);
     const jobs = response.data || [];
-    
-    return jobs.map(job => ({
+    logger.info(`[Lever] Jobs found: ${jobs.length}`);
+    return jobs;
+  } catch (error) {
+    logger.warn(`Lever API Error for ${companyToken}: ${error.response?.status || error.message}`);
+    const logPath = path.join(process.cwd(), 'lever_failed_companies.log');
+    fs.appendFileSync(logPath, `${new Date().toISOString()} - {"company":"${companyToken}","status":${error.response?.status || 500}}\n`);
+    return null;
+  }
+};
+
+const fetchJobsForCompany = async (companyToken, jobsData) => {
+  try {
+    return jobsData.map(job => ({
       title: job.text,
       company: companyToken.charAt(0).toUpperCase() + companyToken.slice(1),
       location: job.categories?.location || 'Unknown',
@@ -23,9 +35,7 @@ const fetchJobsForCompany = async (companyToken) => {
       jobType: normalizeJobType(job.categories?.commitment || '', job.text),
     }));
   } catch (error) {
-    logger.warn(`Lever API Error for ${companyToken}: ${error.message}`);
-    const logPath = path.join(process.cwd(), 'lever_failed_companies.log');
-    fs.appendFileSync(logPath, `${new Date().toISOString()} - ${companyToken}\n`);
+    logger.error(`Error processing Lever jobs for ${companyToken}: ${error.message}`);
     return [];
   }
 };
@@ -36,8 +46,15 @@ const fetchJobs = async () => {
   let companiesFailed = 0;
 
   for (const company of companies) {
-    const companyJobs = await fetchJobsForCompany(company.trim());
-    if (companyJobs.length === 0) companiesFailed++;
+    const companyToken = company.trim();
+    const rawJobs = await validateLeverCompany(companyToken);
+    
+    if (!rawJobs) {
+      companiesFailed++;
+      continue;
+    }
+
+    const companyJobs = await fetchJobsForCompany(companyToken, rawJobs);
     allJobs = allJobs.concat(companyJobs);
   }
 

@@ -5,5 +5,9 @@ module.exports = [
   'drata',
   'benchling',
   'pilot',
-  'natera'
+  'natera',
+  'leverdemo',
+  'plaid',
+  'freshworks',
+  'outreach'
 ];

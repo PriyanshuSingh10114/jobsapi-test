@@ -10,17 +10,13 @@ const buildJobFilter = (queryParams = {}) => {
   const query = {};
   const andConditions = [];
 
-  // 1. Job Region Filtering (The primary cause of mismatch)
+  // 1. Job Region Filtering
   if (jobRegion && jobRegion !== 'All Jobs') {
     if (jobRegion === 'US Jobs') {
       andConditions.push({ jobRegion: { $in: ['US Onsite', 'US Hybrid', 'US Remote'] } });
     } else {
       andConditions.push({ jobRegion });
     }
-  } else if (!jobRegion) {
-    // Default fallback to US Jobs and International Remote.
-    // Excludes 'Unknown' which represents non-US onsite/hybrid jobs.
-    andConditions.push({ jobRegion: { $in: ['US Onsite', 'US Hybrid', 'US Remote', 'International Remote'] } });
   }
 
   // 2. Text Search for Role and Skills

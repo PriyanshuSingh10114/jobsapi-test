@@ -9,7 +9,7 @@ exports.getStats = async (req, res, next) => {
     const totalJobs = await Job.countDocuments(baseFilter);
     const searchFilterRaw = await Job.countDocuments(); // Raw count for log
     
-    logger.info(`Stats Validation -> Base Count: ${totalJobs}, Raw Total DB Count: ${searchFilterRaw}`);
+    logger.info(`Stats Count: ${totalJobs}`);
 
     const remoteJobs = await Job.countDocuments({ ...baseFilter, remote: true });
     
