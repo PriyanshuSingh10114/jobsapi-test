@@ -10,5 +10,7 @@ router.get('/job-types', debugController.getJobTypes);
 router.get('/job-regions', debugController.getJobRegions);
 router.get('/companies', debugController.getCompanies);
 router.get('/locations', debugController.getLocations);
+router.get('/data-integrity', debugController.getDataIntegrity);
+router.get('/database-health', debugController.getDatabaseHealth);
 
 module.exports = router;

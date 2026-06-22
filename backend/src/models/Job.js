@@ -87,6 +87,8 @@ jobSchema.index({ skills: 1 });
 jobSchema.index({ state: 1 });
 jobSchema.index({ jobType: 1 });
 jobSchema.index({ isRemote: 1 });
+jobSchema.index({ jobRegion: 1, remote: 1, postedAt: -1 });
+jobSchema.index({ source: 1, postedAt: -1 });
 jobSchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model('Job', jobSchema);

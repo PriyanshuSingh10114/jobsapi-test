@@ -61,16 +61,16 @@ const syncJobsForSource = async (sourceName) => {
       job.isUSJob = isUSLocation(normalizedLocation);
       job.country = getCountry(normalizedLocation);
       job.isRemote = job.remote === true;
-      
+
       // Deep Data Extraction
       const fullText = `${job.title || ''} ${job.description || ''}`;
       job.skills = extractSkills(fullText);
-      
+
       const salaryInfo = extractSalary(fullText);
       if (salaryInfo) {
         job.salary = salaryInfo;
       }
-      
+
       job.state = extractState(job.location);
 
       return job;
@@ -89,7 +89,7 @@ const syncJobsForSource = async (sourceName) => {
 
       bulkOps.push({
         updateOne: {
-          filter: { applyUrl: jobData.applyUrl },
+          filter: { jobHash: jobData.jobHash },
           update: { $set: jobData },
           upsert: true
         }
@@ -103,16 +103,19 @@ const syncJobsForSource = async (sourceName) => {
 
     let newJobsCount = 0;
     let updatedJobsCount = 0;
+    let unchangedJobsCount = 0;
 
     if (bulkOps.length > 0) {
       try {
         const bulkResult = await Job.bulkWrite(bulkOps, { ordered: false });
         newJobsCount = bulkResult.upsertedCount || 0;
         updatedJobsCount = bulkResult.modifiedCount || 0;
+        unchangedJobsCount = (bulkResult.matchedCount || 0) - updatedJobsCount;
       } catch (err) {
         logger.error(`Bulk write error for ${sourceName}: ${err.message}`);
         newJobsCount = err.result?.result?.nUpserted || 0;
         updatedJobsCount = err.result?.result?.nModified || 0;
+        unchangedJobsCount = (err.result?.result?.nMatched || 0) - updatedJobsCount;
       }
     }
 
@@ -137,11 +140,11 @@ const syncJobsForSource = async (sourceName) => {
 
     let outputLog = `\n[${sourceName}]\n`;
     if (companiesScanned > 0) outputLog += `Companies Scanned: ${companiesScanned}\nCompanies Failed: ${companiesFailed}\n`;
-    outputLog += `Jobs Fetched: ${fetchedCount}\nJobs Inserted: ${newJobsCount}\nJobs Updated: ${updatedJobsCount}\nJobs Skipped: ${skippedJobsCount}\nDuration: ${duration}s\n`;
+    outputLog += `Jobs Fetched: ${fetchedCount}\nJobs Inserted: ${newJobsCount}\nJobs Updated: ${updatedJobsCount}\nJobs Unchanged: ${unchangedJobsCount}\nJobs Skipped: ${skippedJobsCount}\nDuration: ${duration}s\n`;
     console.log(outputLog);
 
-    logger.info(`Completed sync for ${sourceName}. New: ${newJobsCount}, Updated: ${updatedJobsCount}`);
-    return { success: true, newJobsCount, updatedJobsCount, duration: `${duration}s` };
+    logger.info(`Completed sync for ${sourceName}. Fetched: ${fetchedCount}, Inserted: ${newJobsCount}, Updated: ${updatedJobsCount}, Unchanged: ${unchangedJobsCount}, Skipped: ${skippedJobsCount}`);
+    return { success: true, newJobsCount, updatedJobsCount, unchangedJobsCount, duration: `${duration}s` };
 
   } catch (error) {
     logger.error(`Sync failed for ${sourceName}: ${error.message}`);
@@ -157,7 +160,7 @@ const syncAll = async () => {
     logger.warn('Sync skipped - already running');
     return { success: false, message: 'Sync already running' };
   }
-  
+
   isSyncAllRunning = true;
   const startSyncAll = Date.now();
   try {
@@ -173,9 +176,9 @@ const syncAll = async () => {
     });
 
     await Promise.allSettled(promises);
-    
+
     const duration = ((Date.now() - startSyncAll) / 1000).toFixed(1);
-    
+
     const summary = {
       before: { syncDuration: "25-30 min" },
       after: { syncDuration: `${(duration / 60).toFixed(1)} min (${duration}s)` },
@@ -188,7 +191,7 @@ const syncAll = async () => {
         "Robust index optimization (jobHash uniqueness)"
       ]
     };
-    
+
     return { success: true, summary, details: results };
   } finally {
     isSyncAllRunning = false;

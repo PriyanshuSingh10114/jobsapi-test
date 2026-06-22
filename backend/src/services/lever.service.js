@@ -2,7 +2,7 @@ const axios = require('axios');
 const logger = require('../config/logger');
 const { normalizeJobType } = require('../utils/jobTypeNormalizer');
 
-const leverCompanies = require('../data/lever_companies');
+let leverCompanies = require('../data/lever_companies');
 const fs = require('fs');
 const path = require('path');
 
@@ -17,6 +17,10 @@ const validateLeverCompany = async (companyToken) => {
     logger.warn(`Lever API Error for ${companyToken}: ${error.response?.status || error.message}`);
     const logPath = path.join(process.cwd(), 'lever_failed_companies.log');
     fs.appendFileSync(logPath, `${new Date().toISOString()} - {"company":"${companyToken}","status":${error.response?.status || 500}}\n`);
+    
+    // Dynamic token eviction
+    leverCompanies = leverCompanies.filter(c => c !== companyToken);
+    logger.warn(`[Lever] Automatically evicted dead token: ${companyToken}`);
     return null;
   }
 };
@@ -41,7 +45,7 @@ const fetchJobsForCompany = async (companyToken, jobsData) => {
 };
 
 const fetchJobs = async () => {
-  const companies = leverCompanies;
+  const companies = [...leverCompanies];
   let allJobs = [];
   let companiesFailed = 0;
 
