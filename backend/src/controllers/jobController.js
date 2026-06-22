@@ -51,7 +51,7 @@ exports.searchJobs = async (req, res, next) => {
   try {
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 20;
-    const { role, location, company, jobType, experienceLevel, remote, source, datePosted, sort, jobRegion } = req.query;
+    const { role, location, company, jobType, experienceLevel, remote, source, datePosted, sort, jobRegion, skills } = req.query;
 
     const query = {};
     const andConditions = [];
@@ -68,9 +68,13 @@ exports.searchJobs = async (req, res, next) => {
       andConditions.push({ jobRegion: { $in: ['US Onsite', 'US Hybrid', 'US Remote'] } });
     }
 
-    // Use text search for role
-    if (role) {
-      query.$text = { $search: role };
+    // Use text search for role and skills
+    let textSearchStr = '';
+    if (role) textSearchStr += role + ' ';
+    if (skills) textSearchStr += skills;
+    
+    if (textSearchStr.trim()) {
+      query.$text = { $search: textSearchStr.trim() };
     }
 
     if (company) {

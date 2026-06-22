@@ -2,6 +2,10 @@ const axios = require('axios');
 const logger = require('../config/logger');
 const { normalizeJobType } = require('../utils/jobTypeNormalizer');
 
+const leverCompanies = require('../data/lever_companies');
+const fs = require('fs');
+const path = require('path');
+
 const fetchJobsForCompany = async (companyToken) => {
   try {
     const response = await axios.get(`https://api.lever.co/v0/postings/${companyToken}?mode=json`);
@@ -20,12 +24,14 @@ const fetchJobsForCompany = async (companyToken) => {
     }));
   } catch (error) {
     logger.warn(`Lever API Error for ${companyToken}: ${error.message}`);
+    const logPath = path.join(process.cwd(), 'lever_failed_companies.log');
+    fs.appendFileSync(logPath, `${new Date().toISOString()} - ${companyToken}\n`);
     return [];
   }
 };
 
 const fetchJobs = async () => {
-  const companies = (process.env.LEVER_COMPANIES || '').split(',').filter(Boolean);
+  const companies = leverCompanies;
   let allJobs = [];
 
   for (const company of companies) {

@@ -50,9 +50,20 @@ const classifyJobRegion = (locationString, isRemote, titleString = '') => {
   } else {
     // Non-US
     if (isRemote) return 'International Remote';
-    // If it's non-US onsite or hybrid, we drop it.
-    return null; 
+    // If it's non-US onsite or hybrid, we now keep it
+    return 'Unknown'; 
   }
 };
 
-module.exports = { isUSLocation, classifyJobRegion };
+const getCountry = (locationString) => {
+  if (!locationString) return 'Unknown';
+  if (isUSLocation(locationString)) return 'United States';
+  // Attempt simple extraction or default
+  const parts = locationString.split(',');
+  if (parts.length > 1) {
+    return parts[parts.length - 1].trim();
+  }
+  return 'International';
+};
+
+module.exports = { isUSLocation, classifyJobRegion, getCountry };

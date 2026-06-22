@@ -1,8 +1,9 @@
 const Job = require('../models/Job');
 const Source = require('../models/Source');
 const logger = require('../config/logger');
-const { classifyJobRegion } = require('../utils/locationHelper');
+const { classifyJobRegion, isUSLocation, getCountry } = require('../utils/locationHelper');
 const { extractSkills, extractSalary, extractState } = require('../utils/dataExtractor');
+const { generateJobHash } = require('../utils/hashHelper');
 
 const arbeitnowService = require('./arbeitnow.service');
 const remotiveService = require('./remotive.service');
@@ -11,6 +12,12 @@ const leverService = require('./lever.service');
 const ashbyService = require('./ashby.service');
 const usajobsService = require('./usajobs.service');
 const themuseService = require('./themuse.service');
+const smartrecruitersService = require('./smartrecruiters.service');
+const recruiteeService = require('./recruitee.service');
+const workdayService = require('./workday.service');
+const jobviteService = require('./jobvite.service');
+const teamtailorService = require('./teamtailor.service');
+const bamboohrService = require('./bamboohr.service');
 
 const services = {
   'Arbeitnow': arbeitnowService.fetchJobs,
@@ -20,6 +27,12 @@ const services = {
   'Ashby': ashbyService.fetchJobs,
   'USAJobs': usajobsService.fetchJobs,
   'TheMuse': themuseService.fetchJobs,
+  'SmartRecruiters': smartrecruitersService.fetchJobs,
+  'Recruitee': recruiteeService.fetchJobs,
+  'Workday': workdayService.fetchJobs,
+  'Jobvite': jobviteService.fetchJobs,
+  'Teamtailor': teamtailorService.fetchJobs,
+  'BambooHR': bamboohrService.fetchJobs,
 };
 
 const syncJobsForSource = async (sourceName) => {
@@ -29,39 +42,45 @@ const syncJobsForSource = async (sourceName) => {
   }
 
   try {
+    const startTime = Date.now();
     logger.info(`Starting sync for ${sourceName}`);
     const fetchFunc = services[sourceName];
     let jobs = await fetchFunc();
 
-    // Filter and assign jobRegion, plus extract deep data
-    jobs = jobs.reduce((acc, job) => {
-      const region = classifyJobRegion(job.location, job.remote, job.title);
-      if (region) {
-        job.jobRegion = region;
-        
-        // Deep Data Extraction
-        const fullText = `${job.title || ''} ${job.description || ''}`;
-        job.skills = extractSkills(fullText);
-        
-        const salaryInfo = extractSalary(fullText);
-        if (salaryInfo) {
-          job.salary = salaryInfo;
-        }
-        
-        job.state = extractState(job.location);
-
-        acc.push(job);
+    // Do not filter out jobs, just assign properties
+    jobs = jobs.map((job) => {
+      job.jobRegion = classifyJobRegion(job.location, job.remote, job.title);
+      job.isUSJob = isUSLocation(job.location);
+      job.country = getCountry(job.location);
+      job.isRemote = job.remote === true;
+      
+      // Deep Data Extraction
+      const fullText = `${job.title || ''} ${job.description || ''}`;
+      job.skills = extractSkills(fullText);
+      
+      const salaryInfo = extractSalary(fullText);
+      if (salaryInfo) {
+        job.salary = salaryInfo;
       }
-      return acc;
-    }, []);
+      
+      job.state = extractState(job.location);
+
+      return job;
+    });
 
     let newJobsCount = 0;
     let updatedJobsCount = 0;
+    let skippedJobsCount = 0;
 
     for (const jobData of jobs) {
-      if (!jobData.applyUrl) continue;
+      if (!jobData.applyUrl && !jobData.title) {
+        skippedJobsCount++;
+        continue;
+      }
 
-      const existingJob = await Job.findOne({ applyUrl: jobData.applyUrl });
+      jobData.jobHash = generateJobHash(jobData.company, jobData.title, jobData.location, jobData.source);
+
+      const existingJob = await Job.findOne({ jobHash: jobData.jobHash });
       
       if (existingJob) {
         // Update existing to keep it fresh
@@ -74,6 +93,8 @@ const syncJobsForSource = async (sourceName) => {
       }
     }
 
+    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+
     // Update Source status
     sourceDoc.lastSync = new Date();
     sourceDoc.status = 'Healthy';
@@ -81,8 +102,15 @@ const syncJobsForSource = async (sourceName) => {
     sourceDoc.lastError = null;
     await sourceDoc.save();
 
+    console.log(`\n[${sourceName}]
+Jobs Fetched: ${jobs.length}
+Jobs Inserted: ${newJobsCount}
+Jobs Updated: ${updatedJobsCount}
+Jobs Skipped: ${skippedJobsCount}
+Duration: ${duration}s\n`);
+
     logger.info(`Completed sync for ${sourceName}. New: ${newJobsCount}, Updated: ${updatedJobsCount}`);
-    return { success: true, newJobsCount, updatedJobsCount };
+    return { success: true, newJobsCount, updatedJobsCount, duration: `${duration}s` };
 
   } catch (error) {
     logger.error(`Sync failed for ${sourceName}: ${error.message}`);

@@ -3,10 +3,11 @@ const logger = require('../config/logger');
 
 const fetchJobs = async () => {
   try {
-    // The Muse API gives 20 jobs per page. We will fetch 3 pages to get 60 jobs.
     let allJobs = [];
+    let page = 1;
+    let pageCount = 1;
     
-    for (let page = 1; page <= 3; page++) {
+    while (page <= pageCount) {
       const response = await axios.get('https://www.themuse.com/api/public/jobs', {
         params: {
           page,
@@ -14,6 +15,10 @@ const fetchJobs = async () => {
           descending: true
         }
       });
+
+      if (page === 1) {
+        pageCount = response.data.page_count || 1;
+      }
 
       const items = response.data.results || [];
 
@@ -41,8 +46,13 @@ const fetchJobs = async () => {
       });
 
       allJobs = [...allJobs, ...parsedJobs];
+      page++;
+      
+      // Safety limit to avoid infinite loop or very long sync
+      if (page > 50) break;
     }
 
+    logger.info(`[TheMuse] Pages Processed: ${page - 1}, Jobs Collected: ${allJobs.length}`);
     return allJobs;
   } catch (error) {
     logger.error('Error fetching jobs from TheMuse', error.message);

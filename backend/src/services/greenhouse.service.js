@@ -24,8 +24,10 @@ const fetchJobsForCompany = async (companyToken) => {
   }
 };
 
+const greenhouseCompanies = require('../data/greenhouse_companies');
+
 const fetchJobs = async () => {
-  const companies = (process.env.GREENHOUSE_COMPANIES || '').split(',').filter(Boolean);
+  const companies = greenhouseCompanies;
   let allJobs = [];
 
   for (const company of companies) {

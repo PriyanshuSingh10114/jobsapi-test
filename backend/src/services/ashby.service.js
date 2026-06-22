@@ -24,8 +24,10 @@ const fetchJobsForCompany = async (companyToken) => {
   }
 };
 
+const ashbyCompanies = require('../data/ashby_companies');
+
 const fetchJobs = async () => {
-  const companies = (process.env.ASHBY_COMPANIES || '').split(',').filter(Boolean);
+  const companies = ashbyCompanies;
   let allJobs = [];
 
   for (const company of companies) {

@@ -19,11 +19,13 @@ app.use((req, res, next) => {
 const sourceRoutes = require('./routes/sourceRoutes');
 const jobRoutes = require('./routes/jobRoutes');
 const statRoutes = require('./routes/statRoutes');
+const debugRoutes = require('./routes/debug.routes');
 
 // Routes
 app.use('/api/sources', sourceRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/stats', statRoutes);
+app.use('/api/debug', debugRoutes);
 
 // Swagger UI
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));

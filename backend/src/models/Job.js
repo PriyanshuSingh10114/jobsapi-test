@@ -16,12 +16,10 @@ const jobSchema = new mongoose.Schema({
   source: {
     type: String,
     required: true,
-    enum: ['Arbeitnow', 'Remotive', 'Greenhouse', 'Lever', 'Ashby', 'USAJobs', 'TheMuse'],
   },
   applyUrl: {
     type: String,
     required: true,
-    unique: true, // Use this for deduplication
   },
   description: {
     type: String,
@@ -43,8 +41,7 @@ const jobSchema = new mongoose.Schema({
   },
   jobRegion: {
     type: String,
-    enum: ['US Onsite', 'US Hybrid', 'US Remote', 'International Remote'],
-    required: true
+    enum: ['US Onsite', 'US Hybrid', 'US Remote', 'International Remote', 'Unknown'],
   },
   skills: {
     type: [String],
@@ -57,14 +54,27 @@ const jobSchema = new mongoose.Schema({
   },
   state: {
     type: String,
+  },
+  country: {
+    type: String,
+  },
+  isUSJob: {
+    type: Boolean,
+    default: false,
+  },
+  isRemote: {
+    type: Boolean,
+    default: false,
+  },
+  jobHash: {
+    type: String,
+    required: true,
+    unique: true
   }
 }, { timestamps: true });
 
-// Existing unique index for deduplication
-jobSchema.index({ applyUrl: 1, source: 1 }, { unique: true });
-
 // Text index for search
-jobSchema.index({ title: 'text', company: 'text', description: 'text' });
+jobSchema.index({ title: 'text', company: 'text', description: 'text', skills: 'text' });
 
 // Compound indexes for sorting and filtering optimization
 jobSchema.index({ postedAt: -1 });
@@ -75,5 +85,8 @@ jobSchema.index({ location: 1 });
 jobSchema.index({ jobRegion: 1 });
 jobSchema.index({ skills: 1 });
 jobSchema.index({ state: 1 });
+jobSchema.index({ jobType: 1 });
+jobSchema.index({ isRemote: 1 });
+jobSchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model('Job', jobSchema);
