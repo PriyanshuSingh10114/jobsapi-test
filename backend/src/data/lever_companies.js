@@ -1,5 +1,9 @@
 module.exports = [
-  'netflix',
-  'twitch',
-  'yelp'
+  'sourcegraph',
+  'netlify',
+  'postman',
+  'drata',
+  'benchling',
+  'pilot',
+  'natera'
 ];
