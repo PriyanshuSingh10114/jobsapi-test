@@ -8,6 +8,8 @@ const remotiveService = require('./remotive.service');
 const greenhouseService = require('./greenhouse.service');
 const leverService = require('./lever.service');
 const ashbyService = require('./ashby.service');
+const usajobsService = require('./usajobs.service');
+const themuseService = require('./themuse.service');
 
 const services = {
   'Arbeitnow': arbeitnowService.fetchJobs,
@@ -15,6 +17,8 @@ const services = {
   'Greenhouse': greenhouseService.fetchJobs,
   'Lever': leverService.fetchJobs,
   'Ashby': ashbyService.fetchJobs,
+  'USAJobs': usajobsService.fetchJobs,
+  'TheMuse': themuseService.fetchJobs,
 };
 
 const syncJobsForSource = async (sourceName) => {

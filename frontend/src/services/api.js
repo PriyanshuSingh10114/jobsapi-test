@@ -11,6 +11,7 @@ export const fetchSources = () => api.get('/sources').then((res) => res.data.dat
 export const fetchStats = () => api.get('/stats').then((res) => res.data.data);
 export const fetchJobs = (params) => api.get('/jobs', { params }).then((res) => res.data);
 export const searchJobs = (params) => api.get('/jobs/search', { params }).then((res) => res.data);
+export const getSuggestions = (q) => api.get('/jobs/suggestions', { params: { q } }).then((res) => res.data.data);
 export const syncJobs = () => api.post('/jobs/sync').then((res) => res.data);
 
 export default api;

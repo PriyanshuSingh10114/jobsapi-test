@@ -1,5 +1,6 @@
 const axios = require('axios');
 const logger = require('../config/logger');
+const { normalizeJobType } = require('../utils/jobTypeNormalizer');
 
 const fetchJobsForCompany = async (companyToken) => {
   try {
@@ -15,6 +16,7 @@ const fetchJobsForCompany = async (companyToken) => {
       description: job.title, // Keep simple
       postedAt: new Date(job.publishedAt || new Date()),
       remote: job.isRemote || false,
+      jobType: normalizeJobType(job.employmentType || '', job.title),
     }));
   } catch (error) {
     logger.warn(`Ashby API Error for ${companyToken}: ${error.message}`);

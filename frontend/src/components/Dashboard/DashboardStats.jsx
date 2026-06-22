@@ -1,16 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
 import { fetchStats } from '../../services/api';
-import { Briefcase, Building2, Globe, Clock } from 'lucide-react';
+import { Briefcase, Building2, Globe, Clock, GraduationCap, CheckCircle } from 'lucide-react';
 
 const StatCard = ({ icon: Icon, label, value, colorClass, bgColorClass }) => (
-  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4">
-    <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${bgColorClass} ${colorClass}`}>
-      <Icon size={24} />
-    </div>
-    <div>
-      <div className="text-2xl font-bold text-slate-800">{value}</div>
+  <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col gap-3 justify-center transition-all hover:shadow-md">
+    <div className="flex items-center gap-3">
+      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${bgColorClass} ${colorClass}`}>
+        <Icon size={20} />
+      </div>
       <div className="text-sm font-medium text-slate-500">{label}</div>
     </div>
+    <div className="text-2xl font-bold text-slate-800">{value}</div>
   </div>
 );
 
@@ -31,7 +31,7 @@ const DashboardStats = () => {
   };
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
       <StatCard 
         icon={Briefcase} 
         label="Total Jobs" 
@@ -52,6 +52,20 @@ const DashboardStats = () => {
         value={stats?.remoteJobs?.toLocaleString() || 0} 
         colorClass="text-green-600"
         bgColorClass="bg-green-50"
+      />
+      <StatCard 
+        icon={CheckCircle} 
+        label="Full-Time" 
+        value={stats?.fullTimeJobs?.toLocaleString() || 0} 
+        colorClass="text-indigo-600"
+        bgColorClass="bg-indigo-50"
+      />
+      <StatCard 
+        icon={GraduationCap} 
+        label="Internships" 
+        value={stats?.internships?.toLocaleString() || 0} 
+        colorClass="text-pink-600"
+        bgColorClass="bg-pink-50"
       />
       <StatCard 
         icon={Clock} 

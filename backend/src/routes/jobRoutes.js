@@ -1,5 +1,5 @@
 const express = require('express');
-const { getJobs, syncJobs, searchJobs } = require('../controllers/jobController');
+const { getJobs, syncJobs, searchJobs, getSuggestions } = require('../controllers/jobController');
 
 const router = express.Router();
 
@@ -67,6 +67,7 @@ router.get('/', getJobs);
  *       200:
  *         description: Success
  */
+router.get('/suggestions', getSuggestions);
 router.get('/search', searchJobs);
 
 /**

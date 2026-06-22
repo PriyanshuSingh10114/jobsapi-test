@@ -1,14 +1,22 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { syncJobs } from '../services/api';
 import { RefreshCw } from 'lucide-react';
 import DashboardStats from '../components/Dashboard/DashboardStats';
+import DashboardInsights from '../components/Dashboard/DashboardInsights';
 import JobSearch from '../components/Dashboard/JobSearch';
 import JobListing from '../components/Dashboard/JobListing';
 
 const DashboardPage = () => {
   const [searchParams, setSearchParams] = useState(null);
   const [isSearching, setIsSearching] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('jobFilters');
+    if (saved) {
+      setSearchParams(JSON.parse(saved));
+    }
+  }, []);
 
   const handleSearch = (params) => {
     setSearchParams(params);
@@ -34,7 +42,7 @@ const DashboardPage = () => {
         <button
           onClick={() => syncMutation.mutate()}
           disabled={syncMutation.isPending}
-          className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-lg font-medium hover:bg-slate-50 transition-all disabled:opacity-50"
+          className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-lg font-medium hover:bg-slate-50 transition-all disabled:opacity-50 shadow-sm"
         >
           <RefreshCw size={16} className={syncMutation.isPending ? 'animate-spin text-primary-600' : 'text-primary-600'} />
           {syncMutation.isPending ? 'Updating...' : 'Update Jobs'}
@@ -42,17 +50,18 @@ const DashboardPage = () => {
       </div>
 
       {/* Main Search Bar */}
-      <section className="mb-8">
+      <section className="mb-8 relative z-20">
         <JobSearch onSearch={handleSearch} isSearching={isSearching} />
       </section>
 
-      {/* Stats Cards */}
-      <section className="mb-8">
+      {/* Stats Cards & Insights */}
+      <section className="mb-8 relative z-10">
         <DashboardStats />
+        <DashboardInsights />
       </section>
 
       {/* Search Results / Latest Jobs */}
-      <section className="h-[800px] flex flex-col">
+      <section className="h-[800px] flex flex-col relative z-0">
         <JobListing 
           searchParams={searchParams} 
           onSearchStateChange={setIsSearching} 

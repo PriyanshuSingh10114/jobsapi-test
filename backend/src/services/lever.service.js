@@ -1,5 +1,6 @@
 const axios = require('axios');
 const logger = require('../config/logger');
+const { normalizeJobType } = require('../utils/jobTypeNormalizer');
 
 const fetchJobsForCompany = async (companyToken) => {
   try {
@@ -15,6 +16,7 @@ const fetchJobsForCompany = async (companyToken) => {
       description: job.descriptionPlain || job.description,
       postedAt: new Date(job.createdAt),
       remote: job.categories?.commitment === 'Remote' || job.categories?.location?.toLowerCase().includes('remote') || false,
+      jobType: normalizeJobType(job.categories?.commitment || '', job.text),
     }));
   } catch (error) {
     logger.warn(`Lever API Error for ${companyToken}: ${error.message}`);

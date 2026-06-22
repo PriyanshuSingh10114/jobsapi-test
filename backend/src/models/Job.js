@@ -16,7 +16,7 @@ const jobSchema = new mongoose.Schema({
   source: {
     type: String,
     required: true,
-    enum: ['Arbeitnow', 'Remotive', 'Greenhouse', 'Lever', 'Ashby'],
+    enum: ['Arbeitnow', 'Remotive', 'Greenhouse', 'Lever', 'Ashby', 'USAJobs', 'TheMuse'],
   },
   applyUrl: {
     type: String,
@@ -33,9 +33,27 @@ const jobSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  jobType: {
+    type: String,
+    default: 'Full-time',
+  },
+  experienceLevel: {
+    type: String,
+    default: 'Mid Level',
+  }
 }, { timestamps: true });
 
-// Create a compound index to help with deduplication just in case
+// Existing unique index for deduplication
 jobSchema.index({ applyUrl: 1, source: 1 }, { unique: true });
+
+// Text index for search
+jobSchema.index({ title: 'text', company: 'text', description: 'text' });
+
+// Compound indexes for sorting and filtering optimization
+jobSchema.index({ postedAt: -1 });
+jobSchema.index({ company: 1 });
+jobSchema.index({ source: 1 });
+jobSchema.index({ remote: 1 });
+jobSchema.index({ location: 1 });
 
 module.exports = mongoose.model('Job', jobSchema);

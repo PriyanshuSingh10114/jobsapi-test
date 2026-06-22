@@ -1,5 +1,6 @@
 const axios = require('axios');
 const logger = require('../config/logger');
+const { normalizeJobType } = require('../utils/jobTypeNormalizer');
 
 const fetchJobs = async () => {
   try {
@@ -15,6 +16,7 @@ const fetchJobs = async () => {
       description: job.description,
       postedAt: job.created_at ? new Date(job.created_at * 1000) : new Date(),
       remote: job.remote,
+      jobType: normalizeJobType(job.job_types?.join(', ') || '', job.title),
     }));
   } catch (error) {
     logger.error(`Arbeitnow API Error: ${error.message}`);

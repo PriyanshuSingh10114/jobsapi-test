@@ -1,5 +1,6 @@
 const axios = require('axios');
 const logger = require('../config/logger');
+const { normalizeJobType } = require('../utils/jobTypeNormalizer');
 
 const fetchJobsForCompany = async (companyToken) => {
   try {
@@ -15,6 +16,7 @@ const fetchJobsForCompany = async (companyToken) => {
       description: job.title, // Description usually needs a secondary API call, keeping it simple
       postedAt: new Date(job.updated_at),
       remote: job.location?.name?.toLowerCase().includes('remote') || false,
+      jobType: normalizeJobType('', job.title), // Greenhouse doesn't return job type in basic API by default
     }));
   } catch (error) {
     logger.warn(`Greenhouse API Error for ${companyToken}: ${error.message}`);

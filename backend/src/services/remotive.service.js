@@ -1,5 +1,6 @@
 const axios = require('axios');
 const logger = require('../config/logger');
+const { normalizeJobType } = require('../utils/jobTypeNormalizer');
 
 const fetchJobs = async () => {
   try {
@@ -15,6 +16,7 @@ const fetchJobs = async () => {
       description: job.description,
       postedAt: new Date(job.publication_date),
       remote: true, // All jobs on Remotive are remote
+      jobType: normalizeJobType(job.job_type || '', job.title),
     }));
   } catch (error) {
     logger.error(`Remotive API Error: ${error.message}`);
