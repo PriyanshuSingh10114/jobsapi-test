@@ -1,7 +1,7 @@
 const Job = require('../models/Job');
 const Source = require('../models/Source');
 const logger = require('../config/logger');
-const { classifyJobRegion, isUSLocation, getCountry } = require('../utils/locationHelper');
+const { classifyJobRegion, isUSLocation, getCountry, normalizeLocation } = require('../utils/locationHelper');
 const { extractSkills, extractSalary, extractState } = require('../utils/dataExtractor');
 const { generateJobHash } = require('../utils/hashHelper');
 
@@ -45,13 +45,18 @@ const syncJobsForSource = async (sourceName) => {
     const startTime = Date.now();
     logger.info(`Starting sync for ${sourceName}`);
     const fetchFunc = services[sourceName];
-    let jobs = await fetchFunc();
+    let result = await fetchFunc();
+    let jobs = Array.isArray(result) ? result : result.jobs || [];
+    let companiesScanned = result.companiesScanned || 0;
+    let companiesFailed = result.companiesFailed || 0;
 
     // Do not filter out jobs, just assign properties
     jobs = jobs.map((job) => {
-      job.jobRegion = classifyJobRegion(job.location, job.remote, job.title);
-      job.isUSJob = isUSLocation(job.location);
-      job.country = getCountry(job.location);
+      const normalizedLocation = normalizeLocation(job.location);
+      job.location = normalizedLocation;
+      job.jobRegion = classifyJobRegion(normalizedLocation, job.remote, job.title);
+      job.isUSJob = isUSLocation(normalizedLocation);
+      job.country = getCountry(normalizedLocation);
       job.isRemote = job.remote === true;
       
       // Deep Data Extraction
@@ -102,12 +107,10 @@ const syncJobsForSource = async (sourceName) => {
     sourceDoc.lastError = null;
     await sourceDoc.save();
 
-    console.log(`\n[${sourceName}]
-Jobs Fetched: ${jobs.length}
-Jobs Inserted: ${newJobsCount}
-Jobs Updated: ${updatedJobsCount}
-Jobs Skipped: ${skippedJobsCount}
-Duration: ${duration}s\n`);
+    let outputLog = `\n[${sourceName}]\n`;
+    if (companiesScanned > 0) outputLog += `Companies Scanned: ${companiesScanned}\nCompanies Failed: ${companiesFailed}\n`;
+    outputLog += `Jobs Fetched: ${jobs.length}\nJobs Inserted: ${newJobsCount}\nJobs Updated: ${updatedJobsCount}\nJobs Skipped: ${skippedJobsCount}\nDuration: ${duration}s\n`;
+    console.log(outputLog);
 
     logger.info(`Completed sync for ${sourceName}. New: ${newJobsCount}, Updated: ${updatedJobsCount}`);
     return { success: true, newJobsCount, updatedJobsCount, duration: `${duration}s` };

@@ -1,5 +1,21 @@
 const Job = require('../models/Job');
 
+exports.getCount = async (req, res, next) => {
+  try {
+    const totalJobs = await Job.countDocuments();
+    const uniqueCompanies = await Job.distinct('company');
+    const totalCompanies = uniqueCompanies.length;
+    
+    const sourceCounts = await Job.aggregate([
+      { $group: { _id: "$source", count: { $sum: 1 } } }
+    ]);
+    const bySource = {};
+    sourceCounts.forEach(c => bySource[c._id] = c.count);
+    
+    res.json({ totalJobs, totalCompanies, bySource });
+  } catch (err) { next(err); }
+};
+
 exports.getSources = async (req, res, next) => {
   try {
     const counts = await Job.aggregate([

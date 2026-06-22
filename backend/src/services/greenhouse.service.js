@@ -29,13 +29,15 @@ const greenhouseCompanies = require('../data/greenhouse_companies');
 const fetchJobs = async () => {
   const companies = greenhouseCompanies;
   let allJobs = [];
+  let companiesFailed = 0;
 
   for (const company of companies) {
     const companyJobs = await fetchJobsForCompany(company.trim());
+    if (companyJobs.length === 0) companiesFailed++;
     allJobs = allJobs.concat(companyJobs);
   }
 
-  return allJobs;
+  return { jobs: allJobs, companiesScanned: companies.length, companiesFailed };
 };
 
 module.exports = { fetchJobs };

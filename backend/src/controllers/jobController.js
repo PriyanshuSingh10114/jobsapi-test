@@ -64,8 +64,9 @@ exports.searchJobs = async (req, res, next) => {
         andConditions.push({ jobRegion });
       }
     } else if (!jobRegion) {
-      // Default to US Jobs if no parameter is provided
-      andConditions.push({ jobRegion: { $in: ['US Onsite', 'US Hybrid', 'US Remote'] } });
+      // Default to US Jobs and International Remote if no parameter is provided
+      // Excludes 'Unknown' which represents non-US onsite/hybrid jobs.
+      andConditions.push({ jobRegion: { $in: ['US Onsite', 'US Hybrid', 'US Remote', 'International Remote'] } });
     }
 
     // Use text search for role and skills

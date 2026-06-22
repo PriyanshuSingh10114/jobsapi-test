@@ -5,7 +5,7 @@ const sourceSchema = new mongoose.Schema({
     type: String,
     required: true,
     unique: true,
-    enum: ['Arbeitnow', 'Remotive', 'Greenhouse', 'Lever', 'Ashby', 'USAJobs', 'TheMuse'],
+    enum: ['Arbeitnow', 'Remotive', 'Greenhouse', 'Lever', 'Ashby', 'USAJobs', 'TheMuse', 'SmartRecruiters', 'Workday', 'Jobvite', 'Teamtailor', 'Recruitee', 'BambooHR'],
   },
   lastSync: {
     type: Date,

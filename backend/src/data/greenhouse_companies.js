@@ -1,9 +1,3 @@
 module.exports = [
-  'stripe', 'datadog', 'coinbase', 'hubspot', 'reddit', 'dropbox', 'robinhood', 'plaid',
-  'brex', 'gusto', 'discord', 'instacart', 'doordash', 'asana', 'zapier', 'rippling',
-  'notion', 'checkr', 'ramp', 'flexport', 'airtable', 'snowflake', 'palantir', 'roblox',
-  'affirm', 'chime', 'okta', 'zillow', 'twilio', 'pinterest', 'lyft', 'uber', 'airbnb',
-  'netflix', 'spotify', 'slack', 'atlassian', 'zoom', 'docusign', 'crowdstrike',
-  'databricks', 'gitlab', 'hashicorp', 'confluent', 'mongodb', 'elastic', 'cloudflare',
-  'fastly', 'datadoghq', 'sentry'
+  'stripe', 'datadog', 'coinbase', 'hubspot', 'reddit', 'dropbox', 'robinhood', 'brex', 'gusto', 'discord', 'instacart', 'asana', 'checkr', 'flexport', 'airtable', 'roblox', 'chime', 'okta', 'twilio', 'pinterest', 'lyft', 'airbnb', 'databricks', 'gitlab', 'mongodb', 'elastic', 'cloudflare', 'fastly'
 ];

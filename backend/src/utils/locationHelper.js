@@ -57,7 +57,13 @@ const classifyJobRegion = (locationString, isRemote, titleString = '') => {
 
 const getCountry = (locationString) => {
   if (!locationString) return 'Unknown';
-  if (isUSLocation(locationString)) return 'United States';
+  const loc = locationString.toLowerCase();
+  
+  // Normalize US variants
+  if (loc === 'us' || loc === 'usa' || loc === 'remote usa' || loc === 'remote us' || loc === 'united states' || loc === 'united states of america' || isUSLocation(locationString)) {
+    return 'United States';
+  }
+  
   // Attempt simple extraction or default
   const parts = locationString.split(',');
   if (parts.length > 1) {
@@ -66,4 +72,13 @@ const getCountry = (locationString) => {
   return 'International';
 };
 
-module.exports = { isUSLocation, classifyJobRegion, getCountry };
+const normalizeLocation = (locationString) => {
+  if (!locationString) return 'Unknown';
+  const loc = locationString.toLowerCase().trim();
+  if (loc === 'us' || loc === 'usa' || loc === 'united states' || loc === 'united states of america' || loc === 'remote usa' || loc === 'remote us') {
+    return 'United States';
+  }
+  return locationString.trim();
+};
+
+module.exports = { isUSLocation, classifyJobRegion, getCountry, normalizeLocation };

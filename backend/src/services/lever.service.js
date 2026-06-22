@@ -33,13 +33,15 @@ const fetchJobsForCompany = async (companyToken) => {
 const fetchJobs = async () => {
   const companies = leverCompanies;
   let allJobs = [];
+  let companiesFailed = 0;
 
   for (const company of companies) {
     const companyJobs = await fetchJobsForCompany(company.trim());
+    if (companyJobs.length === 0) companiesFailed++;
     allJobs = allJobs.concat(companyJobs);
   }
 
-  return allJobs;
+  return { jobs: allJobs, companiesScanned: companies.length, companiesFailed };
 };
 
 module.exports = { fetchJobs };
