@@ -5,11 +5,16 @@ import { ExternalLink, MapPin, Building2, Calendar, Globe, Briefcase, Clock } fr
 
 const JobListing = ({ searchParams, onSearchStateChange }) => {
   const [page, setPage] = useState(1);
-  const [sort, setSort] = useState('Newest First');
+  const [sort, setSort] = useState(searchParams?.role ? 'Most Relevant' : 'Newest First');
   
   // Reset page when search params change
   useEffect(() => {
     setPage(1);
+    if (searchParams?.role && sort === 'Newest First') {
+      setSort('Most Relevant');
+    } else if (!searchParams?.role && sort === 'Most Relevant') {
+      setSort('Newest First');
+    }
   }, [searchParams]);
 
   const { data, isLoading, isFetching } = useQuery({
@@ -55,6 +60,7 @@ const JobListing = ({ searchParams, onSearchStateChange }) => {
             onChange={(e) => setSort(e.target.value)}
             className="text-sm border border-slate-200 rounded-lg py-1.5 px-3 focus:ring-2 focus:ring-primary-500 outline-none bg-white font-medium text-slate-700"
           >
+            {searchParams?.role && <option value="Most Relevant">Most Relevant</option>}
             <option value="Newest First">Newest First</option>
             <option value="Oldest First">Oldest First</option>
             <option value="Company Name">Company Name</option>

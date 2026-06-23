@@ -14,4 +14,7 @@ export const searchJobs = (params) => api.get('/jobs/search', { params }).then((
 export const getSuggestions = (q) => api.get('/jobs/suggestions', { params: { q } }).then((res) => res.data.data);
 export const syncJobs = () => api.post('/jobs/sync').then((res) => res.data);
 
+// Analytics Endpoints
+export const fetchAnalyticsSources = () => api.get('/analytics/sources').then((res) => res.data.data);
+
 export default api;

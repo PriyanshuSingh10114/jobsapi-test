@@ -1,6 +1,7 @@
 const Job = require('../models/Job');
 const { syncAll } = require('../services/sync.service');
 const { buildJobFilter } = require('../utils/filterBuilder');
+const { getRoleRegexPattern } = require('../utils/roleNormalizer');
 const logger = require('../config/logger');
 
 exports.getJobs = async (req, res, next) => {
@@ -48,7 +49,7 @@ exports.searchJobs = async (req, res, next) => {
   try {
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 20;
-    const { sort } = req.query;
+    const { sort, role } = req.query;
 
     const query = buildJobFilter(req.query);
 
@@ -57,14 +58,47 @@ exports.searchJobs = async (req, res, next) => {
     if (sort === 'Oldest First') sortOption = { postedAt: 1 };
     else if (sort === 'Company Name') sortOption = { company: 1 };
     else if (sort === 'Remote First') sortOption = { remote: -1, postedAt: -1 };
+    else if (sort === 'Most Relevant') sortOption = { relevanceScore: -1, postedAt: -1 };
 
     const startIndex = (page - 1) * limit;
     
     const total = await Job.countDocuments(query);
-    const jobs = await Job.find(query)
-      .sort(sortOption)
-      .skip(startIndex)
-      .limit(limit);
+    let jobs;
+
+    if (role) {
+      // Relevance Scoring Pipeline for Role Searches
+      const regexPattern = getRoleRegexPattern(role);
+      
+      const pipeline = [
+        { $match: query },
+        {
+          $addFields: {
+            relevanceScore: {
+              $switch: {
+                branches: [
+                  { case: { $regexMatch: { input: "$title", regex: `^(${regexPattern})$`, options: 'i' } }, then: 100 },
+                  { case: { $regexMatch: { input: "$title", regex: `^(${regexPattern})`, options: 'i' } }, then: 80 },
+                  { case: { $regexMatch: { input: "$title", regex: regexPattern, options: 'i' } }, then: 50 }
+                ],
+                default: 10 // Description match
+              }
+            }
+          }
+        },
+        // If user actively selects a sort, respect it exactly.
+        // If sort isn't specified but there's a role search, default to Most Relevant.
+        { $sort: (!sort) ? { relevanceScore: -1, postedAt: -1 } : sortOption },
+        { $skip: startIndex },
+        { $limit: limit }
+      ];
+      
+      jobs = await Job.aggregate(pipeline);
+    } else {
+      jobs = await Job.find(query)
+        .sort(sortOption)
+        .skip(startIndex)
+        .limit(limit);
+    }
 
     logger.info(`Search Count: ${total}`);
 

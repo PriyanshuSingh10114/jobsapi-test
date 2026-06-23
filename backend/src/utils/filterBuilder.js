@@ -1,3 +1,5 @@
+const { getRoleRegexPattern } = require('./roleNormalizer');
+
 /**
  * Builds a standardized MongoDB filter object for jobs.
  * This guarantees that /api/stats and /api/jobs/search always return consistent counts.
@@ -19,12 +21,22 @@ const buildJobFilter = (queryParams = {}) => {
     }
   }
 
-  // 2. Text Search for Role and Skills
-  let textSearchStr = '';
-  if (role) textSearchStr += role + ' ';
-  if (skills) textSearchStr += skills;
-  if (textSearchStr.trim()) {
-    query.$text = { $search: textSearchStr.trim() };
+  // 2. Search for Role and Skills (Regex instead of $text)
+  if (role || skills) {
+    const searchConditions = [];
+    if (role) {
+      const pattern = getRoleRegexPattern(role);
+      searchConditions.push(
+        { title: { $regex: pattern, $options: 'i' } },
+        { description: { $regex: pattern, $options: 'i' } }
+      );
+    }
+    if (skills) {
+      // Just basic regex for skills if no role
+      searchConditions.push({ description: { $regex: skills, $options: 'i' } });
+      searchConditions.push({ skills: { $regex: skills, $options: 'i' } });
+    }
+    andConditions.push({ $or: searchConditions });
   }
 
   // 3. String Filters
@@ -55,20 +67,25 @@ const buildJobFilter = (queryParams = {}) => {
     andConditions.push({ source: { $regex: new RegExp(`^${source}$`, 'i') } });
   }
 
-  // 5. Date Filters
-  if (datePosted) {
-    const date = new Date();
-    if (datePosted === 'Past 24 hours') {
-      date.setDate(date.getDate() - 1);
-      andConditions.push({ postedAt: { $gte: date } });
-    } else if (datePosted === 'Past Week') {
-      date.setDate(date.getDate() - 7);
-      andConditions.push({ postedAt: { $gte: date } });
-    } else if (datePosted === 'Past Month') {
-      date.setMonth(date.getMonth() - 1);
-      andConditions.push({ postedAt: { $gte: date } });
-    }
+  // 5. Global 30-Day Expiration Filter
+  const date = new Date();
+  if (datePosted === 'Past 24 hours') {
+    date.setDate(date.getDate() - 1);
+  } else if (datePosted === 'Past Week') {
+    date.setDate(date.getDate() - 7);
+  } else {
+    // Default strict 30-day cutoff for everything else (including "Past Month" or empty)
+    date.setDate(date.getDate() - 30);
   }
+  andConditions.push({ postedAt: { $gte: date } });
+
+  // 6. Global US-First Business Rule (Phase 2 Enforcement)
+  andConditions.push({
+    $or: [
+      { isUSJob: true },
+      { remote: true }
+    ]
+  });
 
   if (andConditions.length > 0) {
     query.$and = andConditions;

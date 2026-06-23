@@ -103,26 +103,30 @@ const extractSalary = (text) => {
 const extractExperienceLevel = (title, description, rawLevel) => {
   const t = (title || '').toLowerCase();
   
-  if (t.includes('intern') || t.includes('co-op') || t.includes('apprentice') || t.includes('new grad') || t.includes('entry level') || t.includes('junior') || t.includes(' jr ') || t.match(/\bjr\b/)) return 'Entry Level';
+  if (t.includes('intern') || t.includes('summer intern') || t.includes('swe intern') || t.includes('co-op') || t.includes('graduate program') || t.includes('apprentice')) return 'Internship';
+  if (t.includes('new grad') || t.includes('graduate')) return 'New Grad';
+  if (t.includes('entry level') || t.includes('junior') || t.includes(' jr ') || t.match(/\bjr\b/)) return 'Entry Level';
   if (t.includes('senior') || t.includes(' sr ') || t.match(/\bsr\b/) || t.includes('staff') || t.includes('principal') || t.includes('architect')) return 'Senior';
   if (t.includes('lead') || t.includes('manager') || t.includes('director') || t.match(/\bvp\b/) || t.includes('head') || t.includes('chief')) return 'Leadership';
   if (t.includes('mid level') || t.match(/\bii\b/) || t.match(/\biii\b/)) return 'Mid Level';
 
   if (rawLevel) {
     const rl = rawLevel.toLowerCase();
-    if (rl.includes('intern') || rl.includes('entry') || rl.includes('junior') || rl.includes('new grad')) return 'Entry Level';
+    if (rl.includes('intern') || rl.includes('co-op') || rl.includes('graduate')) return 'Internship';
+    if (rl.includes('new grad')) return 'New Grad';
+    if (rl.includes('entry') || rl.includes('junior')) return 'Entry Level';
     if (rl.includes('senior') || rl.includes('staff') || rl.includes('principal') || rl.includes('architect')) return 'Senior';
     if (rl.includes('lead') || rl.includes('manager') || rl.includes('director') || rl.includes('executive')) return 'Leadership';
     if (rl.includes('mid')) return 'Mid Level';
   }
 
-  return 'Unknown';
+  return 'Entry Level'; // Safe fallback instead of Unknown
 };
 
 const extractEmploymentType = (title, description, rawType) => {
   const t = (title || '').toLowerCase();
   
-  if (t.includes('intern') || t.includes('co-op') || t.includes('apprentice')) return 'Internship';
+  if (t.includes('intern') || t.includes('summer intern') || t.includes('swe intern') || t.includes('co-op') || t.includes('apprentice') || t.includes('graduate program')) return 'Internship';
   if (t.includes('contract') || t.includes('freelance')) return 'Contract';
   if (t.includes('part time') || t.includes('part-time')) return 'Part Time';
   if (t.includes('temporary')) return 'Temporary';
@@ -137,7 +141,7 @@ const extractEmploymentType = (title, description, rawType) => {
     if (rt.includes('full')) return 'Full Time';
   }
 
-  return 'Full Time'; // Safe fallback
+  return 'Full Time'; // Safe fallback instead of Unknown
 };
 
 module.exports = {

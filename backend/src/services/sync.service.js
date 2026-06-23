@@ -72,6 +72,12 @@ const syncJobsForSource = async (sourceName) => {
       job.country = getCountry(normalizedLocation);
       job.isRemote = job.remote === true;
 
+      // EXPLICIT INGESTION GUARD (PHASE 4)
+      if (job.isUSJob === false && job.remote === false) {
+        skippedJobsCount++;
+        continue;
+      }
+
       // Deep Data Extraction
       const fullText = `${job.title || ''} ${job.description || ''}`;
       job.skills = extractSkills(fullText);
