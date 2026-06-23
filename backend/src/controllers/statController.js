@@ -41,11 +41,7 @@ exports.getStats = async (req, res, next) => {
 
     const activeUsFilter = {
       postedAt: { $gte: thirtyDaysAgo },
-      $or: [
-        { isUSJob: true },
-        { isRemote: true },
-        { remote: true }
-      ]
+      isUSJob: true
     };
 
     // 4. Top Hiring States

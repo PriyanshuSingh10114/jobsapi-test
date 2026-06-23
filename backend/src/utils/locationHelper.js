@@ -38,21 +38,13 @@ const isUSLocation = (locationString) => {
 };
 
 const classifyJobRegion = (locationString, isRemote, titleString = '') => {
-  const isUS = isUSLocation(locationString);
   const title = titleString.toLowerCase();
   const loc = (locationString || '').toLowerCase();
   const isHybrid = title.includes('hybrid') || loc.includes('hybrid');
 
-  if (isUS) {
-    if (isRemote) return 'US Remote';
-    if (isHybrid) return 'US Hybrid';
-    return 'US Onsite';
-  } else {
-    // Non-US
-    if (isRemote) return 'International Remote';
-    // If it's non-US onsite or hybrid, we now keep it
-    return 'Unknown'; 
-  }
+  if (isRemote) return 'Remote';
+  if (isHybrid) return 'Hybrid';
+  return 'Onsite';
 };
 
 const getCountry = (locationString) => {
@@ -91,8 +83,8 @@ const isAllowedForUSPlatform = (locationString, isRemote, titleString = '') => {
   
   const region = classifyJobRegion(locationString, isRemote, titleString);
   
-  // Reject 'Unknown' which represents non-US onsite/hybrid jobs
-  const allowedRegions = ['US Onsite', 'US Hybrid', 'US Remote', 'International Remote'];
+  // Reject 'Unknown' (safety catch)
+  const allowedRegions = ['Onsite', 'Hybrid', 'Remote'];
   return allowedRegions.includes(region);
 };
 

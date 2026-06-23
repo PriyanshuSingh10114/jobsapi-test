@@ -8,11 +8,7 @@ thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 // US-First & Expiration Filter Rule
 const activeUsFilter = {
   postedAt: { $gte: thirtyDaysAgo },
-  $or: [
-    { isUSJob: true },
-    { isRemote: true },
-    { remote: true }
-  ]
+  isUSJob: true
 };
 
 // GET /api/analytics/sources

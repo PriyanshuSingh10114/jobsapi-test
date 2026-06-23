@@ -54,7 +54,14 @@ const syncJobsForSource = async (sourceName) => {
     let companiesFailed = result.companiesFailed || 0;
 
     let skippedJobsCount = 0;
+    let unchangedJobsCount = 0;
     const bulkOps = [];
+
+    // Pre-fetch existing jobs for true change detection
+    const existingJobs = await Job.find({ source: sourceName })
+      .select('jobHash title company location remote jobType experienceLevel')
+      .lean();
+    const existingMap = new Map(existingJobs.map(j => [j.jobHash, j]));
 
     // Filter and Process
     for (let job of jobs) {
@@ -72,8 +79,8 @@ const syncJobsForSource = async (sourceName) => {
       job.country = getCountry(normalizedLocation);
       job.isRemote = job.remote === true;
 
-      // EXPLICIT INGESTION GUARD (PHASE 4)
-      if (job.isUSJob === false && job.remote === false) {
+      // EXPLICIT INGESTION GUARD (US-ONLY PLATFORM)
+      if (job.isUSJob === false) {
         skippedJobsCount++;
         continue;
       }
@@ -98,6 +105,23 @@ const syncJobsForSource = async (sourceName) => {
 
       job.jobHash = generateJobHash(job.company, job.title, job.location, job.source);
 
+      // True Change Detection Logic
+      const existing = existingMap.get(job.jobHash);
+      if (existing) {
+        const isChanged = 
+          existing.title !== job.title ||
+          existing.company !== job.company ||
+          existing.location !== job.location ||
+          existing.remote !== job.remote ||
+          existing.jobType !== job.jobType ||
+          existing.experienceLevel !== job.experienceLevel;
+
+        if (!isChanged) {
+          unchangedJobsCount++;
+          continue; // Skip DB operation entirely
+        }
+      }
+
       bulkOps.push({
         updateOne: {
           filter: { jobHash: job.jobHash },
@@ -114,19 +138,20 @@ const syncJobsForSource = async (sourceName) => {
 
     let newJobsCount = 0;
     let updatedJobsCount = 0;
-    let unchangedJobsCount = 0;
+    // unchangedJobsCount is already calculated in the loop
 
     if (bulkOps.length > 0) {
       try {
         const bulkResult = await Job.bulkWrite(bulkOps, { ordered: false });
         newJobsCount = bulkResult.upsertedCount || 0;
         updatedJobsCount = bulkResult.modifiedCount || 0;
-        unchangedJobsCount = (bulkResult.matchedCount || 0) - updatedJobsCount;
+        // Add any matched but unmodified jobs from bulkWrite (fallback safety)
+        unchangedJobsCount += (bulkResult.matchedCount || 0) - updatedJobsCount;
       } catch (err) {
         logger.error(`Bulk write error for ${sourceName}: ${err.message}`);
         newJobsCount = err.result?.result?.nUpserted || 0;
         updatedJobsCount = err.result?.result?.nModified || 0;
-        unchangedJobsCount = (err.result?.result?.nMatched || 0) - updatedJobsCount;
+        unchangedJobsCount += (err.result?.result?.nMatched || 0) - updatedJobsCount;
       }
     }
 

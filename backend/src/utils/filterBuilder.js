@@ -79,13 +79,8 @@ const buildJobFilter = (queryParams = {}) => {
   }
   andConditions.push({ postedAt: { $gte: date } });
 
-  // 6. Global US-First Business Rule (Phase 2 Enforcement)
-  andConditions.push({
-    $or: [
-      { isUSJob: true },
-      { remote: true }
-    ]
-  });
+  // 6. Global US-First Business Rule (Strictly US-Only)
+  andConditions.push({ isUSJob: true });
 
   if (andConditions.length > 0) {
     query.$and = andConditions;

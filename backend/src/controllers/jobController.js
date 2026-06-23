@@ -69,6 +69,9 @@ exports.searchJobs = async (req, res, next) => {
       // Relevance Scoring Pipeline for Role Searches
       const regexPattern = getRoleRegexPattern(role);
       
+      const escapeRegEx = (str) => str.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+      const literalRole = escapeRegEx(role.trim());
+
       const pipeline = [
         { $match: query },
         {
@@ -76,8 +79,13 @@ exports.searchJobs = async (req, res, next) => {
             relevanceScore: {
               $switch: {
                 branches: [
-                  { case: { $regexMatch: { input: "$title", regex: `^(${regexPattern})$`, options: 'i' } }, then: 100 },
-                  { case: { $regexMatch: { input: "$title", regex: `^(${regexPattern})`, options: 'i' } }, then: 80 },
+                  // 100 points: Exact literal match (e.g. "Frontend Engineer" === "Frontend Engineer")
+                  { case: { $regexMatch: { input: "$title", regex: `^${literalRole}$`, options: 'i' } }, then: 100 },
+                  // 90 points: Title strictly starts with the literal search
+                  { case: { $regexMatch: { input: "$title", regex: `^${literalRole}`, options: 'i' } }, then: 90 },
+                  // 80 points: The exact role keyword exists as a bounded word (e.g., "Senior Frontend Developer")
+                  { case: { $regexMatch: { input: "$title", regex: `\\b(${regexPattern})\\b`, options: 'i' } }, then: 80 },
+                  // 50 points: Partial match anywhere in the title
                   { case: { $regexMatch: { input: "$title", regex: regexPattern, options: 'i' } }, then: 50 }
                 ],
                 default: 10 // Description match

@@ -41,7 +41,7 @@ const jobSchema = new mongoose.Schema({
   },
   jobRegion: {
     type: String,
-    enum: ['US Onsite', 'US Hybrid', 'US Remote', 'International Remote', 'Unknown'],
+    enum: ['Onsite', 'Hybrid', 'Remote', 'Unknown'],
   },
   skills: {
     type: [String],
