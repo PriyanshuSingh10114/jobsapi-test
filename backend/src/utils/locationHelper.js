@@ -30,9 +30,23 @@ const isUSLocation = (locationString) => {
     return true;
   }
 
-  // Exact word match for states (to avoid matching substrings like "INDIAN" in "Indiana")
-  const words = loc.split(/[\s,]+/);
-  if (words.some(word => usStatesAndAbbreviations.some(state => state.toLowerCase() === word))) {
+  // Match explicit state names
+  const fullStateNames = usStatesAndAbbreviations.filter(s => s.length > 2);
+  if (fullStateNames.some(state => loc.includes(state.toLowerCase()))) {
+    return true;
+  }
+
+  // To safely match abbreviations like HI, IN, OR, we must enforce strict boundaries.
+  // We require them to be at the end of the string or preceded by a comma.
+  const abbrRegex = /\b(?:AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/;
+  
+  // Match "City, ST" format specifically to avoid random words in string
+  if (/[a-z]+,\s*(?:AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/i.test(locationString)) {
+    return true;
+  }
+  
+  // If the location matches "US, CA, Santa Clara" (Workday standard)
+  if (/\bus,\s*[a-z]{2}\b/i.test(locationString) || /\busa?-/i.test(locationString)) {
     return true;
   }
 

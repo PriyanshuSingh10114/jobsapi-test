@@ -2,7 +2,7 @@ const axios = require('axios');
 const logger = require('../config/logger');
 const { normalizeJobType } = require('../utils/jobTypeNormalizer');
 
-let leverCompanies = require('../data/lever_companies');
+let leverCompanies = require('../data/lever_companies_validated.json');
 const fs = require('fs');
 const path = require('path');
 

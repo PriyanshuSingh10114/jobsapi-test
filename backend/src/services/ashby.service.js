@@ -24,7 +24,7 @@ const fetchJobsForCompany = async (companyToken) => {
   }
 };
 
-const ashbyCompanies = require('../data/ashby_companies');
+const ashbyCompanies = require('../data/ashby_companies_validated.json');
 const pLimit = require('../utils/concurrency');
 const fs = require('fs');
 const path = require('path');

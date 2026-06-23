@@ -103,8 +103,11 @@ const extractSalary = (text) => {
 const extractExperienceLevel = (title, description, rawLevel) => {
   const t = (title || '').toLowerCase();
   
-  if (t.includes('intern') || t.includes('summer intern') || t.includes('swe intern') || t.includes('co-op') || t.includes('graduate program') || t.includes('apprentice')) return 'Internship';
-  if (t.includes('new grad') || t.includes('graduate')) return 'New Grad';
+  // Explicit aggressive internship matching
+  const internRegex = /\b(intern|internship|summer intern|swe intern|software engineer intern|ml intern|data science intern|security intern|co-op|apprentice)\b/i;
+  if (internRegex.test(t)) return 'Internship';
+  
+  if (t.includes('new grad') || t.includes('graduate program') || t.includes('associate program') || /\bnew graduate\b/.test(t)) return 'New Grad';
   if (t.includes('entry level') || t.includes('junior') || t.includes(' jr ') || t.match(/\bjr\b/)) return 'Entry Level';
   if (t.includes('senior') || t.includes(' sr ') || t.match(/\bsr\b/) || t.includes('staff') || t.includes('principal') || t.includes('architect')) return 'Senior';
   if (t.includes('lead') || t.includes('manager') || t.includes('director') || t.match(/\bvp\b/) || t.includes('head') || t.includes('chief')) return 'Leadership';
@@ -126,11 +129,13 @@ const extractExperienceLevel = (title, description, rawLevel) => {
 const extractEmploymentType = (title, description, rawType) => {
   const t = (title || '').toLowerCase();
   
-  if (t.includes('intern') || t.includes('summer intern') || t.includes('swe intern') || t.includes('co-op') || t.includes('apprentice') || t.includes('graduate program')) return 'Internship';
+  const internRegex = /\b(intern|internship|summer intern|swe intern|software engineer intern|ml intern|data science intern|security intern|co-op|apprentice)\b/i;
+  if (internRegex.test(t)) return 'Internship';
+  
   if (t.includes('contract') || t.includes('freelance')) return 'Contract';
   if (t.includes('part time') || t.includes('part-time')) return 'Part Time';
   if (t.includes('temporary')) return 'Temporary';
-  if (t.includes('full time') || t.includes('full-time')) return 'Full Time';
+  if (t.includes('full time') || t.includes('full-time') || t.includes('new grad') || t.includes('graduate program') || t.includes('associate program')) return 'Full Time';
   
   if (rawType) {
     const rt = rawType.toLowerCase();

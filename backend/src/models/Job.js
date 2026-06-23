@@ -91,5 +91,7 @@ jobSchema.index({ jobRegion: 1, remote: 1, postedAt: -1 });
 jobSchema.index({ jobType: 1, experienceLevel: 1, jobRegion: 1 });
 jobSchema.index({ source: 1, postedAt: -1 });
 jobSchema.index({ createdAt: -1 });
+jobSchema.index({ isUSJob: 1 });
+jobSchema.index({ isUSJob: 1, postedAt: -1 });
 
 module.exports = mongoose.model('Job', jobSchema);

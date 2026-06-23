@@ -8,7 +8,7 @@ const QUICK_ROLES = [
   'DevOps Engineer', 'Product Manager'
 ];
 
-const SOURCES = ['Arbeitnow', 'Remotive', 'Greenhouse', 'Lever', 'Ashby', 'USAJobs', 'TheMuse'];
+const SOURCES = ['Arbeitnow', 'Remotive', 'Greenhouse', 'Lever', 'Ashby', 'USAJobs', 'TheMuse', 'Workday', 'Teamtailor', 'Jobvite', 'BambooHR'];
 
 const JobSearch = ({ onSearch, isSearching }) => {
   const [filters, setFilters] = useState(() => {
@@ -20,7 +20,7 @@ const JobSearch = ({ onSearch, isSearching }) => {
       company: '',
       jobType: '',
       experienceLevel: '',
-      jobRegion: 'US Jobs',
+      jobRegion: 'All Jobs',
       remote: false,
       source: '',
       datePosted: ''
@@ -223,9 +223,9 @@ const JobSearch = ({ onSearch, isSearching }) => {
                 className="block w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
               >
                 <option value="All Jobs">All Jobs</option>
-                <option value="US Jobs">US Jobs</option>
-                <option value="US Remote">US Remote</option>
-                <option value="International Remote">International Remote</option>
+                <option value="Onsite">Onsite</option>
+                <option value="Hybrid">Hybrid</option>
+                <option value="Remote">Remote</option>
               </select>
             </div>
             <div>
@@ -236,10 +236,12 @@ const JobSearch = ({ onSearch, isSearching }) => {
                 className="block w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
               >
                 <option value="">Any Level</option>
-                <option value="Entry">Entry Level</option>
-                <option value="Mid">Mid Level</option>
+                <option value="Internship">Internship</option>
+                <option value="New Grad">New Grad</option>
+                <option value="Entry Level">Entry Level</option>
+                <option value="Mid Level">Mid Level</option>
                 <option value="Senior">Senior</option>
-                <option value="Executive">Executive</option>
+                <option value="Leadership">Leadership</option>
               </select>
             </div>
             <div>

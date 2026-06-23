@@ -5,6 +5,7 @@ const logger = require('../config/logger');
 const { isAllowedForUSPlatform, classifyJobRegion, isUSLocation, getCountry, normalizeLocation } = require('../utils/locationHelper');
 const { extractSkills, extractSalary, extractState, extractExperienceLevel, extractEmploymentType } = require('../utils/dataExtractor');
 const { generateJobHash } = require('../utils/hashHelper');
+const { validateJob } = require('../utils/validationHelper');
 
 const arbeitnowService = require('./arbeitnow.service');
 const remotiveService = require('./remotive.service');
@@ -65,45 +66,42 @@ const syncJobsForSource = async (sourceName) => {
 
     // Filter and Process
     for (let job of jobs) {
-      const normalizedLocation = normalizeLocation(job.location);
       
-      // EXPLICIT US JOB PLATFORM RULE
-      if (!isAllowedForUSPlatform(normalizedLocation, job.remote, job.title)) {
-        skippedJobsCount++;
-        continue;
-      }
-
+      // ----------------------------------------------------
+      // STAGE 1: NORMALIZE JOB (Extract, Classify, Format)
+      // ----------------------------------------------------
+      const normalizedLocation = normalizeLocation(job.location);
       job.location = normalizedLocation;
       job.jobRegion = classifyJobRegion(normalizedLocation, job.remote, job.title);
       job.isUSJob = isUSLocation(normalizedLocation);
       job.country = getCountry(normalizedLocation);
       job.isRemote = job.remote === true;
 
-      // EXPLICIT INGESTION GUARD (US-ONLY PLATFORM)
-      if (job.isUSJob === false) {
-        skippedJobsCount++;
-        continue;
-      }
-
-      // Deep Data Extraction
       const fullText = `${job.title || ''} ${job.description || ''}`;
       job.skills = extractSkills(fullText);
       job.experienceLevel = extractExperienceLevel(job.title, job.description, job.experienceLevel);
       job.jobType = extractEmploymentType(job.title, job.description, job.jobType);
 
       const salaryInfo = extractSalary(fullText);
-      if (salaryInfo) {
-        job.salary = salaryInfo;
-      }
-
+      if (salaryInfo) job.salary = salaryInfo;
       job.state = extractState(job.location);
 
-      if (!job.applyUrl && !job.title) {
+      // Generate mathematically unique hash for duplicate prevention
+      job.jobHash = generateJobHash(job.company, job.title, job.location, job.source);
+
+      // ----------------------------------------------------
+      // STAGE 2: VALIDATE JOB (The Global Compliance Gate)
+      // ----------------------------------------------------
+      const validation = validateJob(job);
+      if (!validation.isValid) {
+        // Uncomment to debug rejections: logger.debug(`Rejected ${job.company} - ${job.title}: ${validation.reason}`);
         skippedJobsCount++;
         continue;
       }
 
-      job.jobHash = generateJobHash(job.company, job.title, job.location, job.source);
+      // ----------------------------------------------------
+      // STAGE 3: CHANGE DETECTION & BULK WRITE PREP
+      // ----------------------------------------------------
 
       // True Change Detection Logic
       const existing = existingMap.get(job.jobHash);

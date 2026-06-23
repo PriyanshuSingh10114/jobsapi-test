@@ -24,7 +24,7 @@ const fetchJobsForCompany = async (companyToken) => {
   }
 };
 
-const greenhouseCompanies = require('../data/greenhouse_companies');
+const greenhouseCompanies = require('../data/greenhouse_companies_validated.json');
 const pLimit = require('../utils/concurrency');
 const fs = require('fs');
 const path = require('path');
