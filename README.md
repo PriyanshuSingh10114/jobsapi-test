@@ -63,31 +63,6 @@ Search jobs using:
 
 ---
 
-## 🎓 Internship Detection
-
-Automatically identifies:
-
-- Internship
-- Summer Internship
-- Winter Internship
-- Fall Internship
-- Spring Internship
-- Co-op Programs
-- Apprentice Roles
-
----
-
-## 👨‍🎓 New Grad Detection
-
-Automatically classifies:
-
-- New Grad
-- Entry Level
-- Early Career
-- Campus Hiring
-- Graduate Programs
-
----
 
 ## 🏠 Remote Job Classification
 
