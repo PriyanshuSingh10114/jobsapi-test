@@ -23,8 +23,10 @@ const isUSLocation = (locationString) => {
   
   const loc = locationString.toLowerCase();
   
-  // Direct matches
-  if (usKeywords.some(keyword => loc.includes(keyword.toLowerCase()))) {
+  // Use strict word boundary regex for "US" and "USA" to prevent matching "A-US-tralia" or "Cypr-US"
+  const usRegex = /\b(us|usa|united states|america|united states of america)\b/i;
+  
+  if (usRegex.test(loc)) {
     return true;
   }
 
