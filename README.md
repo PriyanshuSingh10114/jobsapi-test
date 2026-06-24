@@ -148,10 +148,10 @@ API --> Frontend
 | Recruitee | ✅ |
 | Arbeitnow | ✅ |
 | Remotive | ✅ |
-| Workday | 🚧 |
-| BambooHR | 🚧 |
-| Teamtailor | 🚧 |
-| Jobvite | 🚧 |
+| Workday | ✅ |
+| BambooHR | ✅ |
+| Teamtailor | ✅ |
+| Jobvite | ✅ |
 
 ---
 
