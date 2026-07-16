@@ -1,5 +1,5 @@
-import { Outlet } from 'react-router-dom';
-import { Search } from 'lucide-react';
+import { Outlet, NavLink } from 'react-router-dom';
+import { Search, LayoutDashboard, User } from 'lucide-react';
 
 const Layout = () => {
   return (
@@ -13,8 +13,19 @@ const Layout = () => {
           <span className="text-xl font-bold text-slate-800">JobSearch</span>
         </div>
         
-        <div className="text-sm font-medium text-slate-500 hidden md:block">
-          US-First Job Platform
+        <div className="flex items-center gap-6 text-sm font-medium">
+          <NavLink 
+            to="/dashboard" 
+            className={({ isActive }) => `flex items-center gap-2 ${isActive ? 'text-primary-600' : 'text-slate-500 hover:text-slate-800'}`}
+          >
+            <LayoutDashboard size={18} /> Dashboard
+          </NavLink>
+          <NavLink 
+            to="/profile" 
+            className={({ isActive }) => `flex items-center gap-2 ${isActive ? 'text-primary-600' : 'text-slate-500 hover:text-slate-800'}`}
+          >
+            <User size={18} /> Profile Studio
+          </NavLink>
         </div>
       </header>
       

@@ -1,55 +1,56 @@
-const axios = require('axios');
-const logger = require('../config/logger');
+const { fetchWithRetry } = require('../core/httpClient');
 const { XMLParser } = require('fast-xml-parser');
 const pLimit = require('../utils/concurrency');
+const path = require('path');
+const fs = require('fs');
 
-const jobviteCompanies = [
-  'zscaler', 'ringcentral', 'purestorage', 'proofpoint'
-];
-
-const fetchJobsForCompany = async (company) => {
+const fetchJobs = async (syncLogger) => {
+  const configPath = path.join(__dirname, '../config/connectors/jobvite.json');
+  let companies = [];
   try {
-    const response = await axios.get(`https://app.jobvite.com/CompanyJobs/Xml.aspx?c=${company}`);
-    const parser = new XMLParser();
-    const result = parser.parse(response.data);
-    
-    // Jobvite structure: result.result.job
-    let rawJobs = result?.result?.job || [];
-    if (!Array.isArray(rawJobs)) rawJobs = [rawJobs];
-    
-    return rawJobs.map(job => ({
-      title: job.title || '',
-      company: job.company || company.charAt(0).toUpperCase() + company.slice(1),
-      location: job.location || job.region || 'Unknown',
-      source: 'Jobvite',
-      applyUrl: job.detailUrl || job.applyUrl || '',
-      description: job.description || '',
-      postedAt: job.date ? new Date(job.date) : new Date(),
-      remote: job.location?.toLowerCase().includes('remote') || false,
-      jobType: job.jobtype || ''
-    }));
-  } catch (error) {
-    logger.warn(`Jobvite API Error for ${company}: ${error.message}`);
-    return [];
+    companies = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  } catch (err) {
+    throw new Error(`Failed to load config: ${err.message}`);
   }
-};
 
-const fetchJobs = async () => {
-  const companies = jobviteCompanies;
   let allJobs = [];
   let companiesFailed = 0;
   const limit = pLimit(10);
+  const parser = new XMLParser();
 
   const promises = companies.map(company => limit(async () => {
-    const companyJobs = await fetchJobsForCompany(company);
-    if (companyJobs.length === 0) {
+    const result = await fetchWithRetry(`https://app.jobvite.com/CompanyJobs/Xml.aspx?c=${company}`);
+    syncLogger.logRequest(result.durationMs, result.success, result.retries, result.errorClass);
+
+    if (!result.success || !result.data) {
       companiesFailed++;
-    } else {
-      allJobs.push(...companyJobs);
+      return;
+    }
+
+    try {
+      const parsed = parser.parse(result.data);
+      let rawJobs = parsed?.result?.job || [];
+      if (!Array.isArray(rawJobs)) rawJobs = [rawJobs];
+
+      allJobs.push(...rawJobs.map(job => ({
+        title: job.title || '',
+        company: job.company || company.charAt(0).toUpperCase() + company.slice(1),
+        location: job.location || job.region || 'Unknown',
+        source: 'Jobvite',
+        applyUrl: job.detailUrl || job.applyUrl || '',
+        description: job.description || '',
+        postedAt: job.date ? new Date(job.date) : new Date(),
+        remote: job.location?.toLowerCase().includes('remote') || false,
+        jobType: job.jobtype || ''
+      })));
+    } catch (err) {
+      syncLogger.logRequest(0, false, 0, 'Parser Error');
+      companiesFailed++;
     }
   }));
 
   await Promise.all(promises);
+
   return { jobs: allJobs, companiesScanned: companies.length, companiesFailed };
 };
 

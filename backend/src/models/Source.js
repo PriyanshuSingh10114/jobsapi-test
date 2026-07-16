@@ -21,7 +21,17 @@ const sourceSchema = new mongoose.Schema({
   },
   lastError: {
     type: String,
-  }
+  },
+  last_success: { type: Date },
+  latency: { type: Number, default: 0 },
+  jobs_fetched: { type: Number, default: 0 },
+  jobs_inserted: { type: Number, default: 0 },
+  jobs_updated: { type: Number, default: 0 },
+  jobs_skipped: { type: Number, default: 0 },
+  failure_count: { type: Number, default: 0 },
+  consecutive_failures: { type: Number, default: 0 },
+  average_duration: { type: Number, default: 0 },
+  success_rate: { type: Number, default: 0 },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Source', sourceSchema);

@@ -1,33 +1,36 @@
-const axios = require('axios');
-const logger = require('../config/logger');
+const { fetchWithRetry } = require('../core/httpClient');
+const pLimit = require('../utils/concurrency');
 const { normalizeJobType } = require('../utils/jobTypeNormalizer');
-
-let leverCompanies = require('../data/lever_companies_validated.json');
-const fs = require('fs');
 const path = require('path');
+const fs = require('fs');
 
-const validateLeverCompany = async (companyToken) => {
-  logger.info(`[Lever] Testing company: ${companyToken}`);
+const fetchJobs = async (syncLogger) => {
+  const configPath = path.join(__dirname, '../config/connectors/lever.json');
+  let leverCompanies = [];
   try {
-    const response = await axios.get(`https://api.lever.co/v0/postings/${companyToken}?mode=json`);
-    const jobs = response.data || [];
-    logger.info(`[Lever] Jobs found: ${jobs.length}`);
-    return jobs;
-  } catch (error) {
-    logger.warn(`Lever API Error for ${companyToken}: ${error.response?.status || error.message}`);
-    const logPath = path.join(process.cwd(), 'lever_failed_companies.log');
-    fs.appendFileSync(logPath, `${new Date().toISOString()} - {"company":"${companyToken}","status":${error.response?.status || 500}}\n`);
-    
-    // Dynamic token eviction
-    leverCompanies = leverCompanies.filter(c => c !== companyToken);
-    logger.warn(`[Lever] Automatically evicted dead token: ${companyToken}`);
-    return null;
+    leverCompanies = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  } catch (err) {
+    throw new Error(`Failed to load config: ${err.message}`);
   }
-};
 
-const fetchJobsForCompany = async (companyToken, jobsData) => {
-  try {
-    return jobsData.map(job => ({
+  let allJobs = [];
+  let companiesFailed = 0;
+
+  for (const company of leverCompanies) {
+    const companyToken = company.trim();
+    
+    const result = await fetchWithRetry(`https://api.lever.co/v0/postings/${companyToken}?mode=json`);
+    syncLogger.logRequest(result.durationMs, result.success, result.retries, result.errorClass);
+
+    if (!result.success || !Array.isArray(result.data)) {
+      companiesFailed++;
+      continue;
+    }
+
+    const rawJobs = result.data;
+    if (rawJobs.length === 0) continue;
+
+    const companyJobs = rawJobs.map(job => ({
       title: job.text,
       company: companyToken.charAt(0).toUpperCase() + companyToken.slice(1),
       location: job.categories?.location || 'Unknown',
@@ -38,31 +41,11 @@ const fetchJobsForCompany = async (companyToken, jobsData) => {
       remote: job.categories?.commitment === 'Remote' || job.categories?.location?.toLowerCase().includes('remote') || false,
       jobType: normalizeJobType(job.categories?.commitment || '', job.text),
     }));
-  } catch (error) {
-    logger.error(`Error processing Lever jobs for ${companyToken}: ${error.message}`);
-    return [];
-  }
-};
 
-const fetchJobs = async () => {
-  const companies = [...leverCompanies];
-  let allJobs = [];
-  let companiesFailed = 0;
-
-  for (const company of companies) {
-    const companyToken = company.trim();
-    const rawJobs = await validateLeverCompany(companyToken);
-    
-    if (!rawJobs) {
-      companiesFailed++;
-      continue;
-    }
-
-    const companyJobs = await fetchJobsForCompany(companyToken, rawJobs);
-    allJobs = allJobs.concat(companyJobs);
+    allJobs.push(...companyJobs);
   }
 
-  return { jobs: allJobs, companiesScanned: companies.length, companiesFailed };
+  return { jobs: allJobs, companiesScanned: leverCompanies.length, companiesFailed };
 };
 
 module.exports = { fetchJobs };

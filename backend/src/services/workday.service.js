@@ -1,34 +1,45 @@
-const axios = require('axios');
-const logger = require('../config/logger');
+const { fetchWithRetry } = require('../core/httpClient');
 const pLimit = require('../utils/concurrency');
+const path = require('path');
+const fs = require('fs');
 
-// Known workday endpoints for target companies
-const workdayCompanies = [
-  { name: 'Nvidia', url: 'https://nvidia.wd5.myworkdayjobs.com/wday/cxs/nvidia/NVIDIAExternalCareerSite/jobs' },
-  { name: 'Adobe', url: 'https://adobe.wd5.myworkdayjobs.com/wday/cxs/adobe/external_careers/jobs' },
-  { name: 'Cisco', url: 'https://cisco.wd1.myworkdayjobs.com/wday/cxs/cisco/Global_Careers/jobs' },
-  { name: 'Dell', url: 'https://dell.wd1.myworkdayjobs.com/wday/cxs/dell/External/jobs' },
-  { name: 'Qualcomm', url: 'https://qualcomm.wd5.myworkdayjobs.com/wday/cxs/qualcomm/External/jobs' },
-  { name: 'ServiceNow', url: 'https://servicenow.wd5.myworkdayjobs.com/wday/cxs/servicenow/ExternalCareers/jobs' },
-  { name: 'Intuit', url: 'https://intuit.wd1.myworkdayjobs.com/wday/cxs/intuit/careers/jobs' },
-  { name: 'Broadcom', url: 'https://broadcom.wd1.myworkdayjobs.com/wday/cxs/broadcom/External_Career/jobs' }
-];
-
-const fetchJobsForCompany = async (companyObj) => {
+const fetchJobs = async (syncLogger) => {
+  const configPath = path.join(__dirname, '../config/connectors/workday.json');
+  let companies = [];
   try {
-    const response = await axios.post(companyObj.url, {
-      appliedFacets: {},
-      limit: 20, // Let's keep it to 20 per sync to avoid huge bottlenecks initially, or expand pagination
-      offset: 0,
-      searchText: ""
-    }, {
+    companies = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  } catch (err) {
+    throw new Error(`Failed to load config: ${err.message}`);
+  }
+
+  let allJobs = [];
+  let companiesFailed = 0;
+  const limit = pLimit(5);
+
+  const promises = companies.map(companyObj => limit(async () => {
+    // Workday needs POST request
+    const result = await fetchWithRetry(companyObj.url, {
+      method: 'POST',
+      data: {
+        appliedFacets: {},
+        limit: 20,
+        offset: 0,
+        searchText: ""
+      },
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
     });
-
-    const jobs = response.data.jobPostings || [];
     
-    return jobs.map(job => {
-      // url usually like https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite/job/...
+    syncLogger.logRequest(result.durationMs, result.success, result.retries, result.errorClass);
+
+    if (!result.success || !result.data || !result.data.jobPostings) {
+      companiesFailed++;
+      return;
+    }
+
+    const jobs = result.data.jobPostings;
+    if (jobs.length === 0) return;
+
+    allJobs.push(...jobs.map(job => {
       const baseUrl = companyObj.url.split('/wday')[0];
       const jobUrlPath = job.externalPath || '';
       
@@ -39,33 +50,15 @@ const fetchJobsForCompany = async (companyObj) => {
         source: 'Workday',
         applyUrl: `${baseUrl}/en-US${companyObj.url.split('cxs')[1].replace('/jobs', '')}${jobUrlPath}`,
         description: job.title || '',
-        postedAt: job.postedOn ? new Date() : new Date(), // WD provides "Posted 2 Days Ago" text usually
+        postedAt: job.postedOn ? new Date() : new Date(),
         remote: job.locationsText?.toLowerCase().includes('remote') || false,
         jobType: job.timeType || ''
       };
-    });
-  } catch (error) {
-    logger.warn(`Workday API Error for ${companyObj.name}: ${error.message}`);
-    return [];
-  }
-};
-
-const fetchJobs = async () => {
-  const companies = workdayCompanies;
-  let allJobs = [];
-  let companiesFailed = 0;
-  const limit = pLimit(5); // Lower limit for Workday POST
-
-  const promises = companies.map(company => limit(async () => {
-    const companyJobs = await fetchJobsForCompany(company);
-    if (companyJobs.length === 0) {
-      companiesFailed++;
-    } else {
-      allJobs.push(...companyJobs);
-    }
+    }));
   }));
 
   await Promise.all(promises);
+
   return { jobs: allJobs, companiesScanned: companies.length, companiesFailed };
 };
 

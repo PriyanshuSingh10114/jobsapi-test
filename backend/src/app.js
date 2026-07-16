@@ -39,6 +39,11 @@ const statRoutes = require('./routes/statRoutes');
 const debugRoutes = require('./routes/debug.routes');
 const adminRoutes = require('./routes/admin.routes');
 const analyticsRoutes = require('./routes/analyticsRoutes');
+const automationRoutes = require('./routes/automationRoutes');
+const userRoutes = require('./routes/userRoutes');
+
+// Serve uploads folder statically if needed
+app.use('/uploads', express.static('uploads'));
 
 // Routes
 app.use('/api/sources', sourceRoutes);
@@ -47,6 +52,8 @@ app.use('/api/stats', statRoutes);
 app.use('/api/debug', debugRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/automation', automationRoutes);
+app.use('/api/user', userRoutes);
 
 // Swagger UI
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));

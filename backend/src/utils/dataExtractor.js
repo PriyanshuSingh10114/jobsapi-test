@@ -27,6 +27,16 @@ const COMMON_SKILLS = [
   'Agile', 'Scrum', 'Product Management', 'Data Analysis', 'Tableau', 'Power BI'
 ];
 
+const PRECOMPILED_SKILLS = COMMON_SKILLS.map(skill => {
+  const isSpecial = skill.includes('+') || skill.includes('.');
+  return {
+    skill,
+    isSpecial,
+    lowerSkill: skill.toLowerCase(),
+    regex: isSpecial ? null : new RegExp(`\\b${skill}\\b`, 'i')
+  };
+});
+
 const extractState = (locationString) => {
   if (!locationString) return null;
   const loc = locationString.replace(/,/g, ' ');
@@ -46,16 +56,12 @@ const extractSkills = (text) => {
   const foundSkills = [];
   const lowerText = text.toLowerCase();
   
-  for (const skill of COMMON_SKILLS) {
-    // Simple word boundary check for skills to avoid partial matches
-    // Note: special characters like C++ or Node.js need careful regex or just includes for simplicity
-    const isSpecial = skill.includes('+') || skill.includes('.');
+  for (const { skill, isSpecial, lowerSkill, regex } of PRECOMPILED_SKILLS) {
     if (isSpecial) {
-      if (lowerText.includes(skill.toLowerCase())) {
+      if (lowerText.includes(lowerSkill)) {
         foundSkills.push(skill);
       }
     } else {
-      const regex = new RegExp(`\\b${skill}\\b`, 'i');
       if (regex.test(lowerText)) {
         foundSkills.push(skill);
       }

@@ -70,6 +70,21 @@ const jobSchema = new mongoose.Schema({
     type: String,
     required: true,
     unique: true
+  },
+  first_seen: {
+    type: Date,
+    default: Date.now
+  },
+  last_seen: {
+    type: Date,
+    default: Date.now
+  },
+  is_active: {
+    type: Boolean,
+    default: true
+  },
+  expired_at: {
+    type: Date
   }
 }, { timestamps: true });
 
@@ -93,5 +108,6 @@ jobSchema.index({ source: 1, postedAt: -1 });
 jobSchema.index({ createdAt: -1 });
 jobSchema.index({ isUSJob: 1 });
 jobSchema.index({ isUSJob: 1, postedAt: -1 });
+jobSchema.index({ is_active: 1, last_seen: 1 });
 
 module.exports = mongoose.model('Job', jobSchema);

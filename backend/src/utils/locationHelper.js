@@ -18,6 +18,8 @@ const usStatesAndAbbreviations = [
 
 const usKeywords = ['US', 'USA', 'United States', 'America', 'United States of America'];
 
+const fullStateNames = usStatesAndAbbreviations.filter(s => s.length > 2).map(s => s.toLowerCase());
+
 const isUSLocation = (locationString) => {
   if (!locationString) return false;
   
@@ -31,8 +33,7 @@ const isUSLocation = (locationString) => {
   }
 
   // Match explicit state names
-  const fullStateNames = usStatesAndAbbreviations.filter(s => s.length > 2);
-  if (fullStateNames.some(state => loc.includes(state.toLowerCase()))) {
+  if (fullStateNames.some(state => loc.includes(state))) {
     return true;
   }
 

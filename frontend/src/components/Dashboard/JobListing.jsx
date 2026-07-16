@@ -1,11 +1,58 @@
 import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { searchJobs } from '../../services/api';
-import { ExternalLink, MapPin, Building2, Calendar, Globe, Briefcase, Clock } from 'lucide-react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import { searchJobs, startAutomation, fetchProfile } from '../../services/api';
+import { ExternalLink, MapPin, Building2, Calendar, Globe, Briefcase, Clock, Zap } from 'lucide-react';
 
 const JobListing = ({ searchParams, onSearchStateChange }) => {
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState(searchParams?.role ? 'Most Relevant' : 'Newest First');
+  const [applyingJobId, setApplyingJobId] = useState(null);
+  const navigate = useNavigate();
+
+  const { data: profile } = useQuery({
+    queryKey: ['profile'],
+    queryFn: fetchProfile
+  });
+
+  const applyMutation = useMutation({
+    mutationFn: startAutomation,
+    onMutate: (variables) => {
+      setApplyingJobId(variables.jobId);
+    },
+    onSuccess: (data) => {
+      alert(`Automation started! Session ID: ${data.sessionId}`);
+      setApplyingJobId(null);
+    },
+    onError: (error) => {
+      alert(`Failed to start automation: ${error.message}`);
+      setApplyingJobId(null);
+    }
+  });
+
+  const handleAutoApply = (job) => {
+    if (!profile || !profile.resumePath || !profile.firstName || !profile.lastName || !profile.email || !profile.phone) {
+      alert("Please complete your Profile Studio (including Resume upload) before using Auto-Apply.");
+      navigate('/profile');
+      return;
+    }
+
+    const payload = {
+      jobId: job._id,
+      userId: 'local_admin_1',
+      connectorName: job.source,
+      profileData: {
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        email: profile.email,
+        phone: profile.phone,
+        resume: profile.resumePath,
+        linkedin: profile.linkedin,
+        portfolio: profile.portfolio
+      }
+    };
+    applyMutation.mutate(payload);
+  };
   
   // Reset page when search params change
   useEffect(() => {
@@ -128,14 +175,27 @@ const JobListing = ({ searchParams, onSearchStateChange }) => {
                   <div className="text-sm text-slate-400 font-medium flex items-center gap-1">
                     <Clock size={14}/> {formatDistanceToNow(job.postedAt)}
                   </div>
-                  <a 
-                    href={job.applyUrl} 
-                    target="_blank" 
-                    rel="noreferrer" 
-                    className="w-full md:w-auto text-center px-6 py-2.5 bg-primary-600 text-white hover:bg-primary-700 font-semibold rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2 shadow-sm"
-                  >
-                    Apply Now <ExternalLink size={16} />
-                  </a>
+                  <div className="flex items-center gap-2 w-full md:w-auto">
+                    {job.source === 'Greenhouse' ? (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleAutoApply(job); }}
+                        disabled={applyingJobId === job._id}
+                        className="w-full md:w-auto text-center px-6 py-2.5 bg-indigo-600 text-white hover:bg-indigo-700 font-semibold rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
+                      >
+                        {applyingJobId === job._id ? 'Starting AI...' : 'Auto Apply'} <Zap size={16} className={applyingJobId === job._id ? 'animate-pulse' : ''} />
+                      </button>
+                    ) : (
+                      <a 
+                        href={job.applyUrl} 
+                        target="_blank" 
+                        rel="noreferrer" 
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full md:w-auto text-center px-6 py-2.5 bg-primary-600 text-white hover:bg-primary-700 font-semibold rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2 shadow-sm"
+                      >
+                        Apply Now <ExternalLink size={16} />
+                      </a>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}

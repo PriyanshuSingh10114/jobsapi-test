@@ -1,56 +1,56 @@
-const axios = require('axios');
-const logger = require('../config/logger');
+const { fetchWithRetry } = require('../core/httpClient');
 const { XMLParser } = require('fast-xml-parser');
 const pLimit = require('../utils/concurrency');
+const path = require('path');
+const fs = require('fs');
 
-const bamboohrCompanies = [
-  // Start with a few placeholders, or known BambooHR users if any
-  'spacex', 'postmates' // Examples
-];
-
-const fetchJobsForCompany = async (company) => {
+const fetchJobs = async (syncLogger) => {
+  const configPath = path.join(__dirname, '../config/connectors/bamboohr.json');
+  let companies = [];
   try {
-    const response = await axios.get(`https://${company}.bamboohr.com/jobs/embed2.php`);
-    const parser = new XMLParser();
-    const result = parser.parse(response.data);
-    
-    // BambooHR structure: result.XML.job
-    let rawJobs = result?.XML?.job || [];
-    if (!Array.isArray(rawJobs)) rawJobs = [rawJobs];
-    
-    return rawJobs.map(job => ({
-      title: job.title || '',
-      company: company.charAt(0).toUpperCase() + company.slice(1),
-      location: job.location || 'Unknown',
-      source: 'BambooHR',
-      applyUrl: job.detailUrl || `https://${company}.bamboohr.com/jobs`,
-      description: job.description || '',
-      postedAt: new Date(), // BambooHR embed2 doesn't always provide posted date
-      remote: false, // Infer later via dataExtractor
-      jobType: job.employmentType || ''
-    }));
-  } catch (error) {
-    logger.warn(`BambooHR API Error for ${company}: ${error.message}`);
-    return [];
+    companies = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  } catch (err) {
+    throw new Error(`Failed to load config: ${err.message}`);
   }
-};
 
-const fetchJobs = async () => {
-  const companies = bamboohrCompanies;
   let allJobs = [];
   let companiesFailed = 0;
   const limit = pLimit(10);
+  const parser = new XMLParser();
 
   const promises = companies.map(company => limit(async () => {
-    const companyJobs = await fetchJobsForCompany(company);
-    if (companyJobs.length === 0) {
+    const result = await fetchWithRetry(`https://${company}.bamboohr.com/jobs/embed2.php`);
+    syncLogger.logRequest(result.durationMs, result.success, result.retries, result.errorClass);
+
+    if (!result.success || !result.data) {
       companiesFailed++;
-    } else {
-      allJobs.push(...companyJobs);
+      return;
+    }
+
+    try {
+      const parsed = parser.parse(result.data);
+      let rawJobs = parsed?.XML?.job || [];
+      if (!Array.isArray(rawJobs)) rawJobs = [rawJobs];
+
+      allJobs.push(...rawJobs.map(job => ({
+        title: job.title || '',
+        company: company.charAt(0).toUpperCase() + company.slice(1),
+        location: job.location || 'Unknown',
+        source: 'BambooHR',
+        applyUrl: job.detailUrl || `https://${company}.bamboohr.com/jobs`,
+        description: job.description || '',
+        postedAt: new Date(),
+        remote: false,
+        jobType: job.employmentType || ''
+      })));
+    } catch (err) {
+      syncLogger.logRequest(0, false, 0, 'Parser Error');
+      companiesFailed++;
     }
   }));
 
   await Promise.all(promises);
+
   return { jobs: allJobs, companiesScanned: companies.length, companiesFailed };
 };
 

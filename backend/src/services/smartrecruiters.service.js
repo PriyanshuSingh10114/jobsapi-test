@@ -1,14 +1,32 @@
-const axios = require('axios');
-const logger = require('../config/logger');
+const { fetchWithRetry } = require('../core/httpClient');
+const pLimit = require('../utils/concurrency');
+const path = require('path');
+const fs = require('fs');
 
-const smartrecruitersCompanies = ['ubisoft', 'bayer', 'visa'];
-
-const fetchJobsForCompany = async (company) => {
+const fetchJobs = async (syncLogger) => {
+  const configPath = path.join(__dirname, '../config/connectors/smartrecruiters.json');
+  let companies = [];
   try {
-    const response = await axios.get(`https://api.smartrecruiters.com/v1/companies/${company}/postings`);
-    const jobs = response.data.content || [];
-    
-    return jobs.map(job => ({
+    companies = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  } catch (err) {
+    throw new Error(`Failed to load config: ${err.message}`);
+  }
+
+  let allJobs = [];
+  let companiesFailed = 0;
+  const limit = pLimit(10);
+
+  const promises = companies.map(company => limit(async () => {
+    const result = await fetchWithRetry(`https://api.smartrecruiters.com/v1/companies/${company}/postings`);
+    syncLogger.logRequest(result.durationMs, result.success, result.retries, result.errorClass);
+
+    if (!result.success || !result.data || !result.data.content) {
+      companiesFailed++;
+      return;
+    }
+
+    const jobs = result.data.content;
+    allJobs.push(...jobs.map(job => ({
       title: job.name,
       company: company.charAt(0).toUpperCase() + company.slice(1),
       location: job.location?.city || 'Unknown',
@@ -18,20 +36,12 @@ const fetchJobsForCompany = async (company) => {
       postedAt: new Date(job.releasedDate || new Date()),
       remote: job.location?.remote || false,
       jobType: job.typeOfEmployment?.label || 'Full-time',
-    }));
-  } catch (error) {
-    logger.warn(`SmartRecruiters API Error for ${company}: ${error.message}`);
-    return [];
-  }
-};
+    })));
+  }));
 
-const fetchJobs = async () => {
-  let allJobs = [];
-  for (const company of smartrecruitersCompanies) {
-    const companyJobs = await fetchJobsForCompany(company);
-    allJobs = allJobs.concat(companyJobs);
-  }
-  return allJobs;
+  await Promise.all(promises);
+
+  return { jobs: allJobs, companiesScanned: companies.length, companiesFailed };
 };
 
 module.exports = { fetchJobs };
