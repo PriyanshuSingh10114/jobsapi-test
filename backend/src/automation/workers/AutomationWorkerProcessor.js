@@ -81,7 +81,7 @@ async function bootstrap() {
         await contextManager.injectSessionData(context, browserSession);
 
         page = await context.newPage();
-        const connector = new ConnectorClass(context, page, browserSession);
+        const connector = new ConnectorClass(context, page, browserSession, sessionId);
 
         // Run State Machine flow
         telemetry.startPageLoad();

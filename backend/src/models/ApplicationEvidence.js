@@ -6,6 +6,10 @@ const applicationEvidenceSchema = new mongoose.Schema({
     ref: 'ApplicationSession',
     required: true,
   },
+  browserSessionId: {
+    type: String,
+    required: false,
+  },
   type: {
     type: String,
     enum: ['Screenshot', 'Upload', 'Log'],

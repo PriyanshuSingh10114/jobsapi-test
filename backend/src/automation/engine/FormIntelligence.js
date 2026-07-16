@@ -9,11 +9,11 @@ class FormIntelligence {
   /**
    * Analyzes the page DOM to build a map of inputs and their semantic meanings.
    */
-  async analyzeForm() {
+  async analyzeForm(context = this.page) {
     logger.info('Analyzing DOM for form intelligence...');
     
-    // Inject a script into the page to extract all inputs and their associated labels
-    const formFields = await this.page.evaluate(() => {
+    // Inject a script into the page or iframe to extract all inputs and their associated labels
+    const formFields = await context.evaluate(() => {
       const inputs = Array.from(document.querySelectorAll('input, select, textarea'));
       return inputs.map((input, index) => {
         let labelText = '';

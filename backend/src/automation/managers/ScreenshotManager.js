@@ -4,10 +4,12 @@ const logger = require('../../config/logger');
 const ApplicationEvidence = require('../../models/ApplicationEvidence');
 
 class ScreenshotManager {
-  constructor(page, sessionId) {
+  constructor(page, applicationSessionId, browserSessionId) {
     this.page = page;
-    this.sessionId = sessionId;
-    this.evidenceDir = path.join(process.cwd(), 'evidence', sessionId);
+    this.applicationSessionId = applicationSessionId;
+    this.browserSessionId = browserSessionId;
+    const dirId = applicationSessionId ? applicationSessionId.toString() : (browserSessionId || 'anon');
+    this.evidenceDir = path.join(process.cwd(), 'evidence', dirId);
     
     // Ensure directory exists
     if (!fs.existsSync(this.evidenceDir)) {
@@ -24,12 +26,15 @@ class ScreenshotManager {
       await this.page.screenshot({ path: filePath, fullPage });
 
       // Save record in DB
-      await ApplicationEvidence.create({
-        applicationSessionId: this.sessionId,
-        type: 'Screenshot',
-        checkpoint,
-        filePath
-      });
+      if (this.applicationSessionId) {
+        await ApplicationEvidence.create({
+          applicationSessionId: this.applicationSessionId,
+          browserSessionId: this.browserSessionId,
+          type: 'Screenshot',
+          checkpoint,
+          filePath
+        });
+      }
 
       return filePath;
     } catch (error) {

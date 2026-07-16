@@ -1,8 +1,9 @@
 class BaseApplicationConnector {
-  constructor(context, page, sessionData) {
+  constructor(context, page, sessionData, applicationSessionId) {
     this.context = context;
     this.page = page;
     this.sessionData = sessionData;
+    this.applicationSessionId = applicationSessionId;
   }
 
   /**
