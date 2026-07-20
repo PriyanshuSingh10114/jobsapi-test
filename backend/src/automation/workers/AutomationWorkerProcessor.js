@@ -90,19 +90,37 @@ async function bootstrap() {
         telemetry.endPageLoad();
         
         await stateMachine.updateState('JobOpened');
+        
+        await stateMachine.updateState('AnalyzingForm');
         await connector.detectApplication();
 
-        // Uploads
-        await connector.uploadResume(profileData.resume);
-        if (profileData.coverLetter) {
-            await connector.uploadCoverLetter(profileData.coverLetter);
-        }
-        await stateMachine.updateState('ResumeUploaded');
-
-        // Fill profile & questions
+        await stateMachine.updateState('FillingProfile');
         await connector.fillProfile(profileData);
+
+        await stateMachine.updateState('UploadingResume');
+        await connector.uploadResume(profileData);
+        await connector.uploadCoverLetter(profileData);
+
+        await stateMachine.updateState('AnsweringQuestions');
         await connector.answerQuestions(profileData);
-        await stateMachine.updateState('QuestionsAnswered');
+
+        const { completedFields, pendingFields } = connector;
+        const totalFields = completedFields.length + pendingFields.length;
+        const completionPercentage = totalFields === 0 ? 100 : Math.round((completedFields.length / totalFields) * 100);
+
+        if (pendingFields.length > 0) {
+            await stateMachine.updateState('PendingUserInput');
+            await eventLogger.info('JobPaused', `Application requires manual input for ${pendingFields.length} fields`);
+            
+            return {
+                status: 'PendingUserInput',
+                completedFields,
+                pendingFields,
+                filledCount: completedFields.length,
+                pendingCount: pendingFields.length,
+                completionPercentage
+            };
+        }
 
         // Review & Submit
         await connector.review();
@@ -121,7 +139,14 @@ async function bootstrap() {
         await telemetry.finalize(true);
         await eventLogger.info('JobCompleted', 'Application submitted successfully');
 
-        return { success: true };
+        return { 
+            status: 'Completed',
+            completedFields,
+            pendingFields: [],
+            filledCount: completedFields.length,
+            pendingCount: 0,
+            completionPercentage: 100
+        };
 
       } catch (error) {
         logger.error(`Application Job Failed: ${error.message}`);
@@ -142,6 +167,12 @@ async function bootstrap() {
 
       } finally {
         // Cleanup
+        let keepBrowserOpen = false;
+        try {
+            const currentState = (await stateMachine.load()).status;
+            keepBrowserOpen = currentState === 'PendingUserInput' || currentState === 'CompletedWithWarnings';
+        } catch (e) {}
+
         if (context) {
           try {
             const newSessionData = await new ContextManager(null).extractSessionData(context);
@@ -150,9 +181,28 @@ async function bootstrap() {
           } catch (err) {
             logger.error(`Failed to save session data: ${err.message}`);
           }
-          await context.close().catch(() => {});
+          if (!keepBrowserOpen) {
+              await context.close().catch(() => {});
+          } else {
+              logger.info('Keeping browser context open for PendingUserInput');
+          }
         }
-        if (browser) BrowserPool.release(browser);
+        
+        if (browser) {
+            if (!keepBrowserOpen) {
+                BrowserPool.release(browser);
+            } else {
+                logger.info('Not releasing browser to pool; waiting for manual user intervention. Setting 15 min timeout.');
+                // Add a 15-minute timeout to reclaim the browser if the user abandons it
+                setTimeout(async () => {
+                   try {
+                       logger.warn(`15-minute intervention timeout reached for session ${sessionId}. Reclaiming browser.`);
+                       if (context) await context.close().catch(() => {});
+                       BrowserPool.release(browser);
+                   } catch (e) {}
+                }, 15 * 60 * 1000);
+            }
+        }
       }
     }, {
       connection: redisConnection,

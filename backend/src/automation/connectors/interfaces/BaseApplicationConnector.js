@@ -4,6 +4,8 @@ class BaseApplicationConnector {
     this.page = page;
     this.sessionData = sessionData;
     this.applicationSessionId = applicationSessionId;
+    this.completedFields = [];
+    this.pendingFields = [];
   }
 
   /**

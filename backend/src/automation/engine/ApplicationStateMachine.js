@@ -18,6 +18,10 @@ class ApplicationStateMachine {
   async updateState(newState, data = null, error = null) {
     if (!this.session) await this.load();
     
+    if (!this.canTransitionTo(newState)) {
+      throw new Error(`Invalid state transition from ${this.session.status} to ${newState}`);
+    }
+
     logger.info(`State Transition [${this.sessionId}]: ${this.session.status} -> ${newState}`);
     
     this.session.status = newState;
@@ -39,13 +43,32 @@ class ApplicationStateMachine {
   }
 
   canTransitionTo(newState) {
-    // Defines valid transitions, simplified for now
-    const validStates = [
-      'Pending', 'ApplicationCreated', 'BrowserStarted', 'JobOpened',
-      'ResumeUploaded', 'QuestionsAnswered', 'ReadyForSubmission', 
-      'Submitted', 'Verified', 'Completed', 'Failed', 'Cancelled'
-    ];
-    return validStates.includes(newState);
+    const validTransitions = {
+      'Pending': ['BrowserStarted', 'Failed', 'Cancelled'],
+      'BrowserStarted': ['JobOpened', 'Failed', 'Cancelled'],
+      'JobOpened': ['AnalyzingForm', 'Failed', 'Cancelled'],
+      'AnalyzingForm': ['FillingProfile', 'Failed', 'Cancelled'],
+      'FillingProfile': ['UploadingResume', 'Failed', 'Cancelled'],
+      'UploadingResume': ['AnsweringQuestions', 'Failed', 'Cancelled'],
+      'AnsweringQuestions': ['PendingUserInput', 'ReadyForSubmission', 'Failed', 'Cancelled'],
+      'PendingUserInput': ['ReadyForSubmission', 'Failed', 'Cancelled'],
+      'ReadyForSubmission': ['Submitting', 'Failed', 'Cancelled'],
+      'Submitting': ['Submitted', 'Failed', 'Cancelled'],
+      'Submitted': ['Verified', 'Failed', 'Cancelled'],
+      'Verified': ['Completed', 'CompletedWithWarnings', 'Failed', 'Cancelled'],
+      'Completed': [],
+      'CompletedWithWarnings': [],
+      'Failed': ['Pending', 'Cancelled'], // Retry goes back to Pending
+      'Cancelled': []
+    };
+
+    // If session is null (initial state creation), allow Pending
+    if (!this.session) return newState === 'Pending';
+
+    const currentState = this.session.status || 'Pending';
+    const allowed = validTransitions[currentState] || [];
+    
+    return allowed.includes(newState);
   }
 
   async incrementRetry() {

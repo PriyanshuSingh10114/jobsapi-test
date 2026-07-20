@@ -6,12 +6,12 @@ const Layout = () => {
     <div className="min-h-screen bg-slate-50">
       {/* Top Navigation Bar */}
       <header className="bg-white border-b border-slate-200 p-4 sticky top-0 z-50 flex justify-between items-center px-6 md:px-12">
-        <div className="flex items-center gap-3">
+        <NavLink to="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
           <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center text-white">
             <Search size={18} />
           </div>
           <span className="text-xl font-bold text-slate-800">JobSearch</span>
-        </div>
+        </NavLink>
         
         <div className="flex items-center gap-6 text-sm font-medium">
           <NavLink 

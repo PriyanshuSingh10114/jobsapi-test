@@ -37,30 +37,75 @@ const upload = multer({
 // Since we have no auth, use a hardcoded default user
 const DEFAULT_USER_ID = 'local_admin_1';
 
+function calculateCompleteness(profile) {
+  let filled = 0;
+  let total = 0;
+  let missingFields = [];
+
+  const check = (path, name) => {
+    total++;
+    const value = path.split('.').reduce((o, i) => o?.[i], profile);
+    if (value && value.toString().trim() !== '') {
+      filled++;
+    } else {
+      missingFields.push(name);
+    }
+  };
+
+  check('basicInfo.firstName', 'First Name');
+  check('basicInfo.lastName', 'Last Name');
+  check('basicInfo.email', 'Email');
+  check('location.country', 'Country');
+  check('professionalInfo.currentPosition', 'Current Position');
+  check('professionalInfo.expectedSalary', 'Expected Salary');
+  check('workAuthorization.country', 'Work Auth Country');
+
+  return {
+    overall: total > 0 ? Math.round((filled / total) * 100) : 0,
+    missingFields
+  };
+}
+
 // GET /api/user/profile
 router.get('/profile', async (req, res, next) => {
   try {
     let profile = await UserProfile.findOne({ userId: DEFAULT_USER_ID });
     if (!profile) {
-      // Create empty profile
       profile = await UserProfile.create({ userId: DEFAULT_USER_ID });
     }
-    res.json({ success: true, profile });
+    
+    const completeness = calculateCompleteness(profile);
+    res.json({ success: true, profile, completeness });
   } catch (error) {
     next(error);
   }
 });
 
-// POST /api/user/profile
-router.post('/profile', async (req, res, next) => {
+// PATCH /api/user/profile
+router.patch('/profile', async (req, res, next) => {
   try {
-    const { firstName, lastName, email, phone, linkedin, portfolio } = req.body;
-    const profile = await UserProfile.findOneAndUpdate(
+    const flatten = (obj, prefix = '') => {
+      let result = {};
+      for (const [key, value] of Object.entries(obj)) {
+        if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+          Object.assign(result, flatten(value, `${prefix}${key}.`));
+        } else {
+          result[`${prefix}${key}`] = value;
+        }
+      }
+      return result;
+    };
+
+    const updateFields = flatten(req.body);
+    
+    let profile = await UserProfile.findOneAndUpdate(
       { userId: DEFAULT_USER_ID },
-      { $set: { firstName, lastName, email, phone, linkedin, portfolio } },
+      { $set: updateFields },
       { new: true, upsert: true }
     );
-    res.json({ success: true, profile });
+    
+    const completeness = calculateCompleteness(profile);
+    res.json({ success: true, profile, completeness });
   } catch (error) {
     next(error);
   }
@@ -73,14 +118,24 @@ router.post('/resume', upload.single('resume'), async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'No file uploaded' });
     }
     
-    // Save absolute path for Playwright
     const absolutePath = path.resolve(req.file.path);
     
-    const profile = await UserProfile.findOneAndUpdate(
-      { userId: DEFAULT_USER_ID },
-      { $set: { resumePath: absolutePath } },
-      { new: true, upsert: true }
-    );
+    let profile = await UserProfile.findOne({ userId: DEFAULT_USER_ID });
+    if (!profile) {
+       profile = new UserProfile({ userId: DEFAULT_USER_ID });
+    }
+    
+    // Push new asset
+    profile.assets.push({
+       name: req.file.originalname,
+       version: '1.0',
+       filePath: absolutePath,
+       isCoverLetter: false,
+       isPortfolio: false,
+       isCertificate: false
+    });
+    
+    await profile.save();
     
     res.json({ success: true, profile });
   } catch (error) {

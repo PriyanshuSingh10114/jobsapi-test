@@ -31,7 +31,12 @@ const JobListing = ({ searchParams, onSearchStateChange }) => {
   });
 
   const handleAutoApply = (job) => {
-    if (!profile || !profile.resumePath || !profile.firstName || !profile.lastName || !profile.email || !profile.phone) {
+    // Nested checks for profile completeness
+    const userProfile = profile?.profile || {};
+    const basicInfo = userProfile?.basicInfo || {};
+    const hasResume = userProfile?.assets && userProfile.assets.some(a => !a.isCoverLetter && !a.isPortfolio && !a.isCertificate);
+    
+    if (!hasResume || !basicInfo.firstName || !basicInfo.lastName || !basicInfo.email || !basicInfo.phone) {
       alert("Please complete your Profile Studio (including Resume upload) before using Auto-Apply.");
       navigate('/profile');
       return;
@@ -40,16 +45,7 @@ const JobListing = ({ searchParams, onSearchStateChange }) => {
     const payload = {
       jobId: job._id,
       userId: 'local_admin_1',
-      connectorName: job.source,
-      profileData: {
-        firstName: profile.firstName,
-        lastName: profile.lastName,
-        email: profile.email,
-        phone: profile.phone,
-        resume: profile.resumePath,
-        linkedin: profile.linkedin,
-        portfolio: profile.portfolio
-      }
+      connectorName: job.source
     };
     applyMutation.mutate(payload);
   };

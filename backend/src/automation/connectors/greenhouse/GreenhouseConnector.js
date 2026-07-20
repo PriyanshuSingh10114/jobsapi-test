@@ -4,6 +4,9 @@ const FormIntelligence = require('../../engine/FormIntelligence');
 const LocatorEngine = require('../../engine/LocatorEngine');
 const ScreenshotManager = require('../../managers/ScreenshotManager');
 const UploadManager = require('../../managers/UploadManager');
+const AIAnswerEngine = require('../../engine/AIAnswerEngine');
+const ResumeSelector = require('../../engine/ResumeSelector');
+const ProfileImprovementEngine = require('../../telemetry/ProfileImprovementEngine');
 
 class GreenhouseConnector extends BaseApplicationConnector {
   async initialize() {
@@ -118,19 +121,19 @@ class GreenhouseConnector extends BaseApplicationConnector {
     } else {
       logger.error('Failed to find a frame with an acceptable application form score. Capturing diagnostics...');
       
-      const fs = require('fs');
+      const fs = require('fs').promises;
       const currentUrl = this.page.url();
       const pageTitle = await this.page.title();
       logger.error(`Failed on URL: ${currentUrl} | Title: ${pageTitle}`);
       
       // Dump HTML
       const html = await this.page.content();
-      fs.writeFileSync('greenhouse_failure_main.html', html);
+      await fs.writeFile('greenhouse_failure_main.html', html).catch(() => {});
       
       let i = 0;
       for (const frame of frames) {
           try {
-              fs.writeFileSync(`greenhouse_failure_frame_${i}.html`, await frame.content());
+              await fs.writeFile(`greenhouse_failure_frame_${i}.html`, await frame.content()).catch(() => {});
           } catch(e) {}
           i++;
       }
@@ -148,13 +151,19 @@ class GreenhouseConnector extends BaseApplicationConnector {
     this.semanticMap = await this.formIntelligence.analyzeForm(this.formContext);
   }
 
-  async uploadResume(resumePath) {
-    if (!resumePath) return;
+  async uploadResume(profileData) {
+    const resumeField = this.semanticMap['RESUME_UPLOAD'];
+    const selector = new ResumeSelector(profileData, {}); // Pass empty job data for now or fetch it
+    const resumePath = selector.selectBestResume();
+
+    if (!resumePath) {
+      logger.warn('Skipped RESUME_UPLOAD\nReason: Profile value missing');
+      this.pendingFields.push({ label: resumeField ? resumeField.labelText : 'Resume', reason: 'Profile has no resume' });
+      return;
+    }
     logger.info(`Uploading resume: ${resumePath}`);
     
-    const resumeField = this.semanticMap['RESUME_UPLOAD'];
     let inputLocator;
-    
     if (resumeField && resumeField.id) {
        inputLocator = this.formContext.locator(`#${resumeField.id}`);
     } else {
@@ -163,19 +172,43 @@ class GreenhouseConnector extends BaseApplicationConnector {
     }
     
     if (await inputLocator.count() > 0) {
-       await this.uploadManager.uploadFile(inputLocator.first(), resumePath);
+       try {
+         await this.uploadManager.uploadFile(inputLocator.first(), resumePath);
+         
+         // Verify the upload by checking if the filename appears in the DOM
+         const filename = resumePath.split(/[/\\]/).pop();
+         try {
+           await this.formContext.waitForSelector(`text=${filename}`, { timeout: 5000 });
+           this.completedFields.push('RESUME_UPLOAD');
+         } catch (verifyErr) {
+           logger.warn(`Uploaded resume but could not verify filename "${filename}" in DOM.`);
+           // Still mark as completed as some ATS hide the filename
+           this.completedFields.push('RESUME_UPLOAD');
+         }
+       } catch (err) {
+         logger.warn(`Failed to upload resume: ${err.message}`);
+         this.pendingFields.push({ label: 'Resume', reason: `Upload failed: ${err.message}` });
+       }
     } else {
        logger.warn('Resume file input completely missing from DOM.');
+       this.pendingFields.push({ label: 'Resume', reason: 'Resume file input missing from DOM' });
     }
   }
 
-  async uploadCoverLetter(coverLetterPath) {
-    if (!coverLetterPath) return;
+  async uploadCoverLetter(profileData) {
+    const clField = this.semanticMap['COVER_LETTER_UPLOAD'];
+    // Assuming cover letter might be an asset
+    const coverLetterAsset = (profileData.assets || []).find(a => a.isCoverLetter);
+    const coverLetterPath = coverLetterAsset ? coverLetterAsset.filePath : null;
+
+    if (!coverLetterPath) {
+      logger.warn('Skipped COVER_LETTER_UPLOAD\nReason: Profile value missing');
+      this.pendingFields.push({ label: clField ? clField.labelText : 'Cover Letter', reason: 'Profile has no cover letter' });
+      return;
+    }
     logger.info(`Uploading cover letter: ${coverLetterPath}`);
     
-    const clField = this.semanticMap['COVER_LETTER_UPLOAD'];
     let inputLocator;
-    
     if (clField && clField.id) {
        inputLocator = this.formContext.locator(`#${clField.id}`);
     } else {
@@ -183,38 +216,109 @@ class GreenhouseConnector extends BaseApplicationConnector {
     }
     
     if (await inputLocator.count() > 0) {
-       await this.uploadManager.uploadFile(inputLocator.first(), coverLetterPath);
+       try {
+         await this.uploadManager.uploadFile(inputLocator.first(), coverLetterPath);
+         this.completedFields.push('COVER_LETTER_UPLOAD');
+       } catch (err) {
+         logger.warn(`Failed to upload cover letter: ${err.message}`);
+         this.pendingFields.push({ label: 'Cover Letter', reason: `Upload failed: ${err.message}` });
+       }
     }
   }
 
   async fillProfile(profileData) {
-    logger.info('Filling basic profile data using Form Intelligence Semantic Map...');
+    logger.info('Filling profile data using Form Intelligence for EVERY detected field...');
     
-    const fillField = async (semanticKey, value) => {
-       if (!value) return;
-       const field = this.semanticMap[semanticKey];
-       if (field) {
-          try {
-             if (field.id) {
-                await this.formContext.fill(`#${field.id}`, value);
-             } else if (field.name) {
-                await this.formContext.fill(`[name="${field.name}"]`, value);
-             }
-             logger.info(`Successfully filled semantic field: ${semanticKey}`);
-          } catch (err) {
-             logger.warn(`Failed to fill ${semanticKey}: ${err.message}`);
-          }
-       } else {
-          logger.warn(`Semantic map missing key: ${semanticKey}. Field might not exist on this specific form.`);
-       }
+    const answerEngine = new AIAnswerEngine(profileData);
+    const CONFIDENCE_THRESHOLD = 0.85;
+
+    const getNested = (obj, path) => path.split('.').reduce((o, p) => o?.[p], obj);
+
+    const profileMapping = {
+      'FIRST_NAME': getNested(profileData, 'basicInfo.firstName'),
+      'LAST_NAME': getNested(profileData, 'basicInfo.lastName'),
+      'EMAIL': getNested(profileData, 'basicInfo.email'),
+      'PHONE': getNested(profileData, 'basicInfo.phone'),
+      'LINKEDIN_URL': getNested(profileData, 'links.linkedin'),
+      'WEBSITE_URL': getNested(profileData, 'links.portfolio') || getNested(profileData, 'links.github'),
+      'EXPECTED_SALARY': getNested(profileData, 'professionalInfo.expectedSalary'),
+      'NOTICE_PERIOD': getNested(profileData, 'professionalInfo.noticePeriod'),
+      'CURRENT_COMPANY': getNested(profileData, 'professionalInfo.currentCompany'),
+      'VISA_STATUS': getNested(profileData, 'workAuthorization.needSponsorship') ? 'Yes' : 'No'
     };
 
-    await fillField('FIRST_NAME', profileData.firstName);
-    await fillField('LAST_NAME', profileData.lastName);
-    await fillField('EMAIL', profileData.email);
-    await fillField('PHONE', profileData.phone);
-    await fillField('LINKEDIN_URL', profileData.linkedin);
-    await fillField('WEBSITE_URL', profileData.portfolio);
+    if (!this.formIntelligence || !this.formIntelligence.allFields) {
+       logger.warn('Form fields not available for iteration.');
+       return;
+    }
+
+    for (const field of this.formIntelligence.allFields) {
+       try {
+           const semanticEntry = Object.entries(this.semanticMap).find(([k, v]) => v.index === field.index);
+           const semanticKey = semanticEntry ? semanticEntry[0] : null;
+           const confidence = semanticEntry ? semanticEntry[1].confidence : 0;
+
+           if (semanticKey === 'RESUME_UPLOAD' || semanticKey === 'COVER_LETTER_UPLOAD') {
+              continue;
+           }
+
+           let value = null;
+           
+           if (semanticKey && confidence >= CONFIDENCE_THRESHOLD) {
+               if (semanticKey.startsWith('AI_')) {
+                   value = await answerEngine.resolveAnswer(semanticKey);
+               } else {
+                   value = profileMapping[semanticKey];
+               }
+           }
+
+           let selector = '';
+           if (field.id) selector = `#${field.id}`;
+           else if (field.name) selector = `[name="${field.name}"]`;
+
+           if (!value) {
+              logger.warn(`Skipped ${semanticKey || field.labelText || field.name}\nReason: Profile value missing`);
+              this.pendingFields.push({
+                 label: field.labelText || field.name || 'Unknown Field',
+                 reason: 'Missing profile value'
+              });
+              
+              if (selector) {
+                 try {
+                   await this.formContext.locator(selector).evaluate(el => {
+                      el.style.border = '2px solid red';
+                      el.style.backgroundColor = '#ffeeee';
+                   });
+                 } catch(e) {}
+              }
+              continue;
+           }
+
+           if (selector) {
+              try {
+                 await this.formContext.fill(selector, value);
+                 logger.info(`Filled ${semanticKey} (Confidence: ${confidence})`);
+                 this.completedFields.push(semanticKey);
+              } catch (err) {
+                 logger.warn(`Failed to fill ${semanticKey}: ${err.message}`);
+                 this.pendingFields.push({
+                    label: field.labelText || semanticKey,
+                    reason: `Failed to fill: ${err.message}`
+                 });
+              }
+           }
+       } catch (fieldProcessingError) {
+           logger.error(`Unhandled error during field processing for ${field.name || 'unknown'}: ${fieldProcessingError.message}`);
+           this.pendingFields.push({
+              label: field.labelText || field.name || 'Unknown',
+              reason: `Internal automation error: ${fieldProcessingError.message}`
+           });
+       }
+    }
+
+    // Run telemetry
+    const telemetry = new ProfileImprovementEngine(profileData);
+    telemetry.analyzeSkippedFields(this.pendingFields);
   }
 
   async answerQuestions(profileData) {
@@ -233,10 +337,12 @@ class GreenhouseConnector extends BaseApplicationConnector {
     const submitBtn = this.formContext.locator('#submit_app, button[type="submit"], input[type="submit"]').first();
     
     if (await submitBtn.count() > 0) {
-      await submitBtn.click();
       logger.info('Clicked submit button.');
-      // Wait for network idle after submission
-      await this.page.waitForLoadState('networkidle').catch(() => {});
+      // Prevent race conditions by running click and navigation await in parallel
+      await Promise.all([
+        this.page.waitForNavigation({ waitUntil: 'networkidle', timeout: 15000 }).catch(() => {}),
+        submitBtn.click()
+      ]);
     } else {
       logger.warn('Submit button not found! Application may not have been submitted.');
     }
@@ -244,7 +350,19 @@ class GreenhouseConnector extends BaseApplicationConnector {
 
   async verify() {
     logger.info('Verifying submission...');
-    // Wait for confirmation message or redirect
+    // Verify successful submission by checking for confirmation texts or URL changes
+    const successRegex = /(thank you|application submitted|success|received your application)/i;
+    
+    try {
+        await this.page.waitForSelector(`text=/${successRegex.source}/i`, { timeout: 8000 });
+        logger.info('Verified submission via text matching.');
+    } catch (e) {
+        logger.warn('Could not verify submission via text. Checking URL or form presence.');
+        const formStillExists = await this.formContext.locator('form').count();
+        if (formStillExists > 0) {
+            throw new Error('Form still exists on page. Submission likely failed or validation errors are present.');
+        }
+    }
   }
 
   async captureEvidence(type, checkpoint) {
