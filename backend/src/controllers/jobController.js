@@ -73,7 +73,7 @@ exports.searchJobs = async (req, res, next) => {
       const literalRole = escapeRegEx(role.trim());
 
       const pipeline = [
-        { $match: query },
+        { $match: { ...query, $text: { $search: literalRole } } },
         {
           $addFields: {
             relevanceScore: {

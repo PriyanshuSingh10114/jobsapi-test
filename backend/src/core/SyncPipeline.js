@@ -33,7 +33,7 @@ class SyncPipeline {
 
       // Pre-fetch existing jobs for deduplication
       const existingJobs = await Job.find({ source: this.connectorName })
-        .select('jobHash title company location remote jobType experienceLevel')
+        .select('jobHash title company location remote jobType experienceLevel postedAt')
         .lean();
       const existingMap = new Map(existingJobs.map(j => [j.jobHash, j]));
       
@@ -92,13 +92,18 @@ class SyncPipeline {
         // 5. Change Detection
         const existing = existingMap.get(job.jobHash);
         if (existing) {
+          // Check if postedAt has advanced (ignoring minor parsing discrepancies under 1 hour)
+          const postedAtChanged = job.postedAt && existing.postedAt && 
+                                  (job.postedAt.getTime() - existing.postedAt.getTime() > 3600000);
+
           const isChanged = 
             existing.title !== job.title ||
             existing.company !== job.company ||
             existing.location !== job.location ||
             existing.remote !== job.remote ||
             existing.jobType !== job.jobType ||
-            existing.experienceLevel !== job.experienceLevel;
+            existing.experienceLevel !== job.experienceLevel ||
+            postedAtChanged;
 
           if (!isChanged) {
             bulkOps.push({
@@ -113,7 +118,6 @@ class SyncPipeline {
             this.syncLogger.logJobStatus('updated');
           }
         } else {
-          job.first_seen = now;
           this.syncLogger.logJobStatus('inserted');
         }
 
@@ -140,6 +144,7 @@ class SyncPipeline {
             await Job.bulkWrite(batch, { ordered: false });
           }
         } catch (err) {
+          console.error('Mongo BulkWrite Error Details:', err);
           this.syncLogger.stats.errors['Mongo BulkWrite Error'] = (this.syncLogger.stats.errors['Mongo BulkWrite Error'] || 0) + 1;
         }
         this.syncLogger.addDbWriteTime(Date.now() - dbWriteStart);

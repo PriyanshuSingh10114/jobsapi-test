@@ -4,19 +4,21 @@
 ### It is just an Test setup not depicting Real Product crafted to check on different resources
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Node.js-22.x-green?style=for-the-badge&logo=node.js">
-  <img src="https://img.shields.io/badge/Express.js-Backend-black?style=for-the-badge&logo=express">
-  <img src="https://img.shields.io/badge/MongoDB-Atlas-green?style=for-the-badge&logo=mongodb">
-  <img src="https://img.shields.io/badge/React-Frontend-blue?style=for-the-badge&logo=react">
-  <img src="https://img.shields.io/badge/Vite-Build-purple?style=for-the-badge&logo=vite">
-  <img src="https://img.shields.io/badge/API-REST-orange?style=for-the-badge">
+  <img src="https://img.shields.io/badge/Node.js-22.x-green.svg?style=for-the-badge&logo=node.js">
+  <img src="https://img.shields.io/badge/Express.js-5.2.x-black.svg?style=for-the-badge&logo=express">
+  <img src="https://img.shields.io/badge/MongoDB-Atlas-green.svg?style=for-the-badge&logo=mongodb">
+  <img src="https://img.shields.io/badge/Redis-ioredis-red.svg?style=for-the-badge&logo=redis">
+  <img src="https://img.shields.io/badge/Playwright-1.61.x-45ba4b.svg?style=for-the-badge&logo=playwright">
+  <img src="https://img.shields.io/badge/React-19.2.x-blue.svg?style=for-the-badge&logo=react">
+  <img src="https://img.shields.io/badge/Vite-8.0.x-purple.svg?style=for-the-badge&logo=vite">
+  <img src="https://img.shields.io/badge/Tailwind_CSS-4.3.x-38B2AC.svg?style=for-the-badge&logo=tailwind-css">
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/github/license/YOUR_USERNAME/jobsapi?style=flat-square">
-  <img src="https://img.shields.io/github/stars/YOUR_USERNAME/jobsapi?style=flat-square">
-  <img src="https://img.shields.io/github/forks/YOUR_USERNAME/jobsapi?style=flat-square">
-  <img src="https://img.shields.io/github/issues/YOUR_USERNAME/jobsapi?style=flat-square">
+  <img src="https://img.shields.io/github/license/PriyanshuSingh10114/jobsapi-test.svg?style=flat-square">
+  <img src="https://img.shields.io/github/stars/PriyanshuSingh10114/jobsapi-test.svg?style=flat-square">
+  <img src="https://img.shields.io/github/forks/PriyanshuSingh10114/jobsapi-test.svg?style=flat-square">
+  <img src="https://img.shields.io/github/issues/PriyanshuSingh10114/jobsapi-test.svg?style=flat-square">
 </p>
 
 ---
@@ -212,6 +214,13 @@ Documentation:
 Scheduling:
   - Node Cron
 
+Queue:
+  - BullMQ
+  - Redis
+
+Automation:
+  - Playwright
+
 HTTP:
   - Axios
 ```
@@ -228,13 +237,18 @@ Bundler:
   - Vite
 
 State Management:
+  - React Query
   - React Hooks
 
 HTTP:
   - Axios
 
 Styling:
-  - CSS
+  - Tailwind CSS
+
+UI & Charts:
+  - Lucide React
+  - Recharts
 ```
 
 ---
@@ -285,7 +299,7 @@ API-->>Frontend: Display Jobs
 ## Clone Repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/jobsapi.git
+git clone https://github.com/PriyanshuSingh10114/jobsapi-test.git
 
 cd jobsapi
 ```

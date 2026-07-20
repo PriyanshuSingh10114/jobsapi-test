@@ -94,20 +94,14 @@ jobSchema.index({ title: 'text', company: 'text', description: 'text', skills: '
 // Compound indexes for sorting and filtering optimization
 jobSchema.index({ postedAt: -1 });
 jobSchema.index({ company: 1 });
-jobSchema.index({ source: 1 });
-jobSchema.index({ remote: 1 });
+jobSchema.index({ source: 1, postedAt: -1 });
 jobSchema.index({ location: 1 });
-jobSchema.index({ jobRegion: 1 });
-jobSchema.index({ skills: 1 });
-jobSchema.index({ state: 1 });
-jobSchema.index({ jobType: 1 });
-jobSchema.index({ isRemote: 1 });
 jobSchema.index({ jobRegion: 1, remote: 1, postedAt: -1 });
 jobSchema.index({ jobType: 1, experienceLevel: 1, jobRegion: 1 });
-jobSchema.index({ source: 1, postedAt: -1 });
-jobSchema.index({ createdAt: -1 });
-jobSchema.index({ isUSJob: 1 });
 jobSchema.index({ isUSJob: 1, postedAt: -1 });
 jobSchema.index({ is_active: 1, last_seen: 1 });
+
+// Partial index for active jobs to optimize common queries
+jobSchema.index({ is_active: 1, postedAt: -1 }, { partialFilterExpression: { is_active: true } });
 
 module.exports = mongoose.model('Job', jobSchema);

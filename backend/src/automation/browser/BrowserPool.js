@@ -17,7 +17,8 @@ class BrowserPool {
   }
 
   async addNewBrowser() {
-    const manager = new BrowserManager({ headless: false }); // SET TO FALSE FOR REAL-TIME VIEWING
+    const isDev = process.env.NODE_ENV === 'development';
+    const manager = new BrowserManager({ headless: !isDev }); // Set to false only in dev for real-time viewing
     const browser = await manager.launch();
     
     // Auto-replace on crash
