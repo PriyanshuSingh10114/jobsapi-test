@@ -19,7 +19,8 @@ class ApplicationStateMachine {
     if (!this.session) await this.load();
     
     if (!this.canTransitionTo(newState)) {
-      throw new Error(`Invalid state transition from ${this.session.status} to ${newState}`);
+      const allowed = this.getAllowedTransitions(this.session.status);
+      throw new Error(`Invalid state transition. Current: [${this.session.status}]. Target: [${newState}]. Allowed: [${allowed.join(', ')}]`);
     }
 
     logger.info(`State Transition [${this.sessionId}]: ${this.session.status} -> ${newState}`);
@@ -42,33 +43,89 @@ class ApplicationStateMachine {
     await this.session.save();
   }
 
-  canTransitionTo(newState) {
-    const validTransitions = {
-      'Pending': ['BrowserStarted', 'Failed', 'Cancelled'],
-      'BrowserStarted': ['JobOpened', 'Failed', 'Cancelled'],
-      'JobOpened': ['AnalyzingForm', 'Failed', 'Cancelled'],
-      'AnalyzingForm': ['FillingProfile', 'Failed', 'Cancelled'],
-      'FillingProfile': ['UploadingResume', 'Failed', 'Cancelled'],
-      'UploadingResume': ['AnsweringQuestions', 'Failed', 'Cancelled'],
-      'AnsweringQuestions': ['PendingUserInput', 'ReadyForSubmission', 'Failed', 'Cancelled'],
-      'PendingUserInput': ['ReadyForSubmission', 'Failed', 'Cancelled'],
-      'ReadyForSubmission': ['Submitting', 'Failed', 'Cancelled'],
-      'Submitting': ['Submitted', 'Failed', 'Cancelled'],
-      'Submitted': ['Verified', 'Failed', 'Cancelled'],
-      'Verified': ['Completed', 'CompletedWithWarnings', 'Failed', 'Cancelled'],
-      'Completed': [],
-      'CompletedWithWarnings': [],
-      'Failed': ['Pending', 'Cancelled'], // Retry goes back to Pending
-      'Cancelled': []
-    };
+  get workflowOrder() {
+    return [
+      'Created',
+      'Queued',
+      'WorkerAssigned',
+      'BrowserStarting',
+      'BrowserReady',
+      'LoadingProfile',
+      'ValidatingProfile',
+      'OpeningJob',
+      'AnalyzingPage',
+      'AnalyzingForm',
+      'ResolvingFields',
+      'UploadingResume',
+      'GeneratingAIAnswers',
+      'FillingFields',
+      'ValidatingFilledFields',
+      'WaitingForUser',
+      'ReadyForSubmission',
+      'Submitting',
+      'SubmissionVerification',
+      'Completed'
+    ];
+  }
 
-    // If session is null (initial state creation), allow Pending
-    if (!this.session) return newState === 'Pending';
-
-    const currentState = this.session.status || 'Pending';
-    const allowed = validTransitions[currentState] || [];
+  getAllowedTransitions(currentState) {
+    const order = this.workflowOrder;
+    const currentIndex = order.indexOf(currentState);
     
+    let allowed = [];
+    if (currentIndex !== -1 && currentIndex < order.length - 1) {
+       allowed.push(order[currentIndex + 1]);
+    }
+    
+    // Global terminal states allowed from almost anywhere
+    allowed.push('Failed', 'Cancelled');
+    
+    // Specific overrides
+    if (currentState === 'WaitingForUser') allowed.push('ReadyForSubmission');
+    if (currentState === 'SubmissionVerification') allowed.push('CompletedWithWarnings', 'Completed');
+    if (currentState === 'Failed') allowed = []; // Failed is terminal (retries shouldn't transition to Failed again)
+    if (currentState === 'Cancelled') allowed = [];
+    if (currentState === 'Completed') allowed = [];
+    if (currentState === 'CompletedWithWarnings') allowed = [];
+
+    return allowed;
+  }
+
+  canTransitionTo(newState) {
+    if (!this.session) return newState === 'Created';
+    const currentState = this.session.status || 'Created';
+    
+    // If the worker tries to transition to Failed when it's already Failed, block it explicitly
+    if (currentState === 'Failed' && newState === 'Failed') {
+        return false;
+    }
+
+    const allowed = this.getAllowedTransitions(currentState);
     return allowed.includes(newState);
+  }
+
+  /**
+   * Resumable workflow logic. Checks if the state machine has already passed this state.
+   * If it has, the worker should skip executing the logic for this state.
+   */
+  shouldExecute(targetState) {
+    if (!this.session) return true;
+    const currentState = this.session.status || 'Created';
+    
+    // If we are currently Failed, we shouldn't execute anything until retry logic resets something?
+    // Wait, the worker picks up the job. The state is whatever it was BEFORE it crashed, 
+    // because we changed the retry logic to NOT transition to Failed for transient errors.
+    
+    const order = this.workflowOrder;
+    const currentIndex = order.indexOf(currentState);
+    const targetIndex = order.indexOf(targetState);
+    
+    // If target is after our current state, we definitely execute it.
+    // Wait, if we are AT 'AnalyzingForm', we should execute the logic to transition to the NEXT step.
+    // So if targetIndex >= currentIndex, execute it.
+    if (targetIndex >= currentIndex) return true;
+    
+    return false;
   }
 
   async incrementRetry() {

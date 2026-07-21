@@ -13,15 +13,9 @@ router.post('/start', async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
 
-    const UserProfile = require('../models/UserProfile');
-    const profile = await UserProfile.findOne({ userId });
-    if (!profile) {
-      return res.status(400).json({ success: false, message: 'Profile not found. Please complete Profile Studio.' });
-    }
-    
-    const profileData = profile.toObject();
-
-    const session = await AutomationWorkerQueue.enqueueJob(jobId, userId, connectorName, profileData);
+    // We no longer fetch or cache the profile here.
+    // The CandidateProfileResolver will fetch a fresh, normalized profile inside the worker.
+    const session = await AutomationWorkerQueue.enqueueJob(jobId, userId, connectorName);
     
     res.status(202).json({
       success: true,

@@ -4,6 +4,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const UserProfile = require('../models/UserProfile');
+const CandidateProfileResolver = require('../automation/engine/CandidateProfileResolver');
 
 // Ensure upload directory exists
 const uploadDir = path.join(process.cwd(), 'uploads', 'resumes');
@@ -76,6 +77,22 @@ router.get('/profile', async (req, res, next) => {
     
     const completeness = calculateCompleteness(profile);
     res.json({ success: true, profile, completeness });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /api/user/profile/complete (Phase 4)
+router.get('/profile/complete', async (req, res, next) => {
+  try {
+    const normalizedProfile = await CandidateProfileResolver.fetchAndNormalize(DEFAULT_USER_ID);
+    const validationReport = CandidateProfileResolver.validate(normalizedProfile);
+    
+    res.json({
+      success: true,
+      profile: normalizedProfile,
+      validation: validationReport
+    });
   } catch (error) {
     next(error);
   }

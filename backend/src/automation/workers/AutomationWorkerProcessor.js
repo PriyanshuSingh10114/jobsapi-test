@@ -10,6 +10,7 @@ const SessionManager = require('../browser/SessionManager');
 const GreenhouseConnector = require('../connectors/greenhouse/GreenhouseConnector');
 const TelemetryManager = require('../telemetry/TelemetryManager');
 const BrowserEventLogger = require('../telemetry/BrowserEventLogger');
+const CandidateProfileResolver = require('../engine/CandidateProfileResolver');
 const Job = require('../../models/Job');
 const logger = require('../../config/logger');
 
@@ -57,6 +58,7 @@ async function bootstrap() {
       let browser, context, page;
       
       try {
+        const startTime = Date.now();
         await eventLogger.info('JobStarted', `Worker started processing job for ${connectorName}`);
         
         // Load job details
@@ -68,11 +70,87 @@ async function bootstrap() {
 
         // Load session info
         const appSession = await stateMachine.load();
-        const profileData = appSession.stateData.profileData;
-
-        await stateMachine.updateState('BrowserStarted');
         
-        // Setup Browser & Context
+        if (appSession.status === 'WaitingForUser') {
+            await stateMachine.updateState('ReadyForSubmission');
+        } else {
+            await stateMachine.updateState('WorkerAssigned');
+        }
+        
+        const runStep = async (targetState, fn) => {
+            if (stateMachine.shouldExecute(targetState)) {
+                await stateMachine.updateState(targetState);
+                if (fn) await fn();
+            }
+        };
+
+        // Resumable Profile Loading
+        let profileData;
+        await runStep('BrowserStarting');
+        
+        await runStep('BrowserReady', async () => {
+            browser = await BrowserPool.acquire();
+            const contextManager = new ContextManager(browser);
+            context = await contextManager.createContext();
+            
+            const browserSession = await SessionManager.getOrCreateSession(userId, connectorName);
+            await contextManager.injectSessionData(context, browserSession);
+
+            page = await context.newPage();
+        });
+
+        await runStep('LoadingProfile', async () => {
+            profileData = await CandidateProfileResolver.fetchAndNormalize(userId);
+            
+            // Log the normalized profile before resolution
+            await eventLogger.info('ProfileNormalized', 'Candidate Profile fetched and normalized successfully', {
+                educationCount: profileData.education?.length || 0,
+                experienceCount: profileData.experience?.length || 0,
+                hasDefaultResume: !!profileData.documents?.defaultResume,
+                hasCoverLetter: profileData.documents?.coverLetters?.length > 0
+            });
+
+            // Cache normalized profile in DB stateData for debugging if needed
+            const ApplicationSession = require('../../models/ApplicationSession');
+            await ApplicationSession.findByIdAndUpdate(sessionId, { $set: { 'stateData.profileData': profileData } });
+        });
+        
+        // If skipped LoadingProfile, we still need profileData in memory for later steps
+        if (!profileData) profileData = appSession.stateData?.profileData || await CandidateProfileResolver.fetchAndNormalize(userId);
+
+        await runStep('ValidatingProfile', async () => {
+            const validationReport = CandidateProfileResolver.validate(profileData);
+            
+            if (!validationReport.canContinue) {
+                await eventLogger.error('ProfileValidationError', `Automation blocked. Critical fields missing: ${validationReport.criticalErrors.join(', ')}`);
+                const error = new Error(`Profile is critically incomplete. Missing: ${validationReport.criticalErrors.join(', ')}`);
+                error.name = 'ValidationError';
+                throw error;
+            }
+
+            if (validationReport.warnings.length > 0) {
+                await eventLogger.info('ProfileValidationWarning', `Profile has warnings but automation will continue. Missing optional fields: ${validationReport.warnings.join(', ')}`, validationReport);
+            }
+
+            await eventLogger.info('ProfileDiagnostics', 'Profile successfully resolved and validated.', {
+               resume: !!profileData.documents.defaultResume,
+               linkedin: !!profileData.links.linkedin,
+               phone: !!profileData.contact.phone,
+               educationCount: profileData.education.length,
+               experienceCount: profileData.experience.length,
+               projectsCount: profileData.projects.length,
+               completionPercentage: validationReport.completion
+            });
+        });
+
+        // Need to pass page to connector, even if skipping BrowserReady
+        // Wait, if we skipped BrowserReady, `page` isn't defined!
+        // Resumability requires browser to be open. So `BrowserStarting` and `BrowserReady` MUST ALWAYS EXECUTE if we don't have a browser.
+        // Actually, since this is a worker process and the browser context was closed when the job threw the error, we ALWAYS need a new browser when the job starts.
+        // So `BrowserStarting` shouldn't be skipped.
+        // Let's modify shouldExecute logic inside runStep.
+        
+        // Phase 1: Setup Browser & Context (ALWAYS RUN on new worker pick up)
         browser = await BrowserPool.acquire();
         const contextManager = new ContextManager(browser);
         context = await contextManager.createContext();
@@ -85,59 +163,96 @@ async function bootstrap() {
 
         // Run State Machine flow
         telemetry.startPageLoad();
-        await connector.initialize();
-        await connector.openJob(targetJob.applyUrl);
+        await runStep('OpeningJob', async () => {
+             await connector.initialize();
+             await connector.openJob(targetJob.applyUrl);
+        });
         telemetry.endPageLoad();
         
-        await stateMachine.updateState('JobOpened');
+        await runStep('AnalyzingPage', async () => {
+             await connector.detectApplication();
+        });
         
-        await stateMachine.updateState('AnalyzingForm');
-        await connector.detectApplication();
+        await runStep('AnalyzingForm', async () => {
+             // detection populated the semantic map
+             logger.info('AnalyzingForm completed');
+        });
 
-        await stateMachine.updateState('FillingProfile');
-        await connector.fillProfile(profileData);
+        await runStep('ResolvingFields', async () => {
+             await connector.resolveFields(profileData);
+        });
 
-        await stateMachine.updateState('UploadingResume');
-        await connector.uploadResume(profileData);
-        await connector.uploadCoverLetter(profileData);
+        await runStep('UploadingResume', async () => {
+             await connector.uploadResume(profileData);
+             await connector.uploadCoverLetter(profileData);
+        });
 
-        await stateMachine.updateState('AnsweringQuestions');
-        await connector.answerQuestions(profileData);
+        await runStep('GeneratingAIAnswers', async () => {
+             await connector.generateAIAnswers(profileData);
+        });
+
+        await runStep('FillingFields', async () => {
+             await connector.fillFields(profileData);
+        });
+
+        await runStep('ValidatingFilledFields', async () => {
+             await connector.validateFilledFields();
+        });
 
         const { completedFields, pendingFields } = connector;
         const totalFields = completedFields.length + pendingFields.length;
         const completionPercentage = totalFields === 0 ? 100 : Math.round((completedFields.length / totalFields) * 100);
+        const executionTimeSec = Math.round((Date.now() - startTime) / 1000);
+        
+        const applicationReport = {
+            totalFieldsDetected: totalFields,
+            fieldsFilled: completedFields.length,
+            fieldsSkipped: pendingFields.length,
+            completionPercentage,
+            skippedReasons: pendingFields.map(p => ({ label: p.label, reason: p.reason })),
+            executionTimeSeconds: executionTimeSec,
+            aiGeneratedAnswers: completedFields.filter(f => f.startsWith('AI_')).length,
+            uploadsCompleted: completedFields.filter(f => f.includes('UPLOAD')).length,
+            resolutionReport: connector.resolutionReport || null
+        };
 
         if (pendingFields.length > 0) {
-            await stateMachine.updateState('PendingUserInput');
-            await eventLogger.info('JobPaused', `Application requires manual input for ${pendingFields.length} fields`);
+            await runStep('WaitingForUser', async () => {
+               await stateMachine.updateState('WaitingForUser', { applicationReport });
+               await eventLogger.info('JobPaused', `Application requires manual input for ${pendingFields.length} fields`, applicationReport);
+            });
             
             return {
-                status: 'PendingUserInput',
+                status: 'WaitingForUser',
                 completedFields,
                 pendingFields,
                 filledCount: completedFields.length,
                 pendingCount: pendingFields.length,
-                completionPercentage
+                completionPercentage,
+                report: applicationReport
             };
         }
 
         // Review & Submit
-        await connector.review();
-        await stateMachine.updateState('ReadyForSubmission');
+        await runStep('ReadyForSubmission', async () => {
+             await connector.review();
+        });
         
-        await connector.submit();
-        await stateMachine.updateState('Submitted');
+        await runStep('Submitting', async () => {
+             await connector.submit();
+        });
 
-        // Verify
-        await connector.verify();
-        await stateMachine.updateState('Verified');
+        await runStep('SubmissionVerification', async () => {
+             await connector.verify();
+        });
         
-        await connector.captureEvidence('Screenshot', 'Completed');
-        await stateMachine.updateState('Completed');
+        await runStep('Completed', async () => {
+             await connector.captureEvidence('Screenshot', 'Completed');
+             await stateMachine.updateState('Completed', { applicationReport });
+        });
 
         await telemetry.finalize(true);
-        await eventLogger.info('JobCompleted', 'Application submitted successfully');
+        await eventLogger.info('JobCompleted', 'Application submitted successfully', applicationReport);
 
         return { 
             status: 'Completed',
@@ -145,22 +260,41 @@ async function bootstrap() {
             pendingFields: [],
             filledCount: completedFields.length,
             pendingCount: 0,
-            completionPercentage: 100
+            completionPercentage: 100,
+            report: applicationReport
         };
 
       } catch (error) {
         logger.error(`Application Job Failed: ${error.message}`);
         await eventLogger.error('JobFailed', error.message, { stack: error.stack });
         
+        if (error.name === 'ValidationError') {
+          // Do not retry validation errors
+          logger.warn(`ValidationError caught. Bypassing retries. Error: ${error.message}`);
+          try {
+             await stateMachine.updateState('Cancelled', null, error);
+          } catch (e) {}
+          await telemetry.finalize(false);
+          return { success: false, error: error.message };
+        }
+
         const canRetry = await stateMachine.incrementRetry();
         telemetry.recordRetry();
 
         if (canRetry) {
-          await stateMachine.updateState('Failed', null, error);
+          // It's a transient error. Do NOT transition to Failed. 
+          // We leave the state where it crashed so it can resume.
+          logger.warn(`Transient error caught. Will retry from state ${stateMachine.session.status}. Error: ${error.message}`);
           throw error; // Let BullMQ retry
         } else {
-          await stateMachine.updateState('Cancelled', null, new Error('Max retries exceeded'));
+          try {
+             // Only attempt to set Failed if not already failed
+             await stateMachine.updateState('Failed', null, error);
+          } catch (e) {
+             logger.warn(`Could not set status to Failed: ${e.message}`);
+          }
           await telemetry.finalize(false);
+          // Do not throw, since we exhausted retries.
         }
         
         return { success: false, error: error.message };
@@ -170,7 +304,7 @@ async function bootstrap() {
         let keepBrowserOpen = false;
         try {
             const currentState = (await stateMachine.load()).status;
-            keepBrowserOpen = currentState === 'PendingUserInput' || currentState === 'CompletedWithWarnings';
+            keepBrowserOpen = currentState === 'WaitingForUser' || currentState === 'CompletedWithWarnings';
         } catch (e) {}
 
         if (context) {
@@ -184,7 +318,7 @@ async function bootstrap() {
           if (!keepBrowserOpen) {
               await context.close().catch(() => {});
           } else {
-              logger.info('Keeping browser context open for PendingUserInput');
+              logger.info('Keeping browser context open for WaitingForUser');
           }
         }
         

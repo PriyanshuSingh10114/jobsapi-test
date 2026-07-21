@@ -5,8 +5,10 @@ const LocatorEngine = require('../../engine/LocatorEngine');
 const ScreenshotManager = require('../../managers/ScreenshotManager');
 const UploadManager = require('../../managers/UploadManager');
 const AIAnswerEngine = require('../../engine/AIAnswerEngine');
+const CandidateResolutionEngine = require('../../engine/CandidateResolutionEngine');
 const ResumeSelector = require('../../engine/ResumeSelector');
 const ProfileImprovementEngine = require('../../telemetry/ProfileImprovementEngine');
+const LearningRecord = require('../../../models/LearningRecord');
 
 class GreenhouseConnector extends BaseApplicationConnector {
   async initialize() {
@@ -153,8 +155,7 @@ class GreenhouseConnector extends BaseApplicationConnector {
 
   async uploadResume(profileData) {
     const resumeField = this.semanticMap['RESUME_UPLOAD'];
-    const selector = new ResumeSelector(profileData, {}); // Pass empty job data for now or fetch it
-    const resumePath = selector.selectBestResume();
+    const resumePath = profileData.documents?.defaultResume;
 
     if (!resumePath) {
       logger.warn('Skipped RESUME_UPLOAD\nReason: Profile value missing');
@@ -172,15 +173,27 @@ class GreenhouseConnector extends BaseApplicationConnector {
     }
     
     if (await inputLocator.count() > 0) {
-       try {
-         await this.uploadManager.uploadFile(inputLocator.first(), resumePath);
-         
-         // Verify the upload by checking if the filename appears in the DOM
-         const filename = resumePath.split(/[/\\]/).pop();
-         try {
-           await this.formContext.waitForSelector(`text=${filename}`, { timeout: 5000 });
-           this.completedFields.push('RESUME_UPLOAD');
-         } catch (verifyErr) {
+        try {
+          const firstInput = inputLocator.first();
+          // Force visibility in case it is occluded or display:none
+          await firstInput.evaluate(el => {
+              el.style.display = 'block';
+              el.style.visibility = 'visible';
+              el.style.opacity = '1';
+              el.style.position = 'static';
+          }).catch(() => {});
+
+          await this.uploadManager.uploadFile(firstInput, resumePath);
+          
+          // Verify the upload by checking if the filename appears in the DOM or input property
+          const filename = resumePath.split(/[/\\]/).pop();
+          try {
+            await Promise.any([
+                this.formContext.waitForSelector(`text="${filename}"`, { timeout: 3000 }),
+                firstInput.evaluate((el, name) => el.files && el.files.length > 0 && el.files[0].name === name, filename).then(res => { if(!res) throw new Error('Not found'); })
+            ]);
+            this.completedFields.push('RESUME_UPLOAD');
+          } catch (verifyErr) {
            logger.warn(`Uploaded resume but could not verify filename "${filename}" in DOM.`);
            // Still mark as completed as some ATS hide the filename
            this.completedFields.push('RESUME_UPLOAD');
@@ -197,9 +210,8 @@ class GreenhouseConnector extends BaseApplicationConnector {
 
   async uploadCoverLetter(profileData) {
     const clField = this.semanticMap['COVER_LETTER_UPLOAD'];
-    // Assuming cover letter might be an asset
-    const coverLetterAsset = (profileData.assets || []).find(a => a.isCoverLetter);
-    const coverLetterPath = coverLetterAsset ? coverLetterAsset.filePath : null;
+    const coverLetters = profileData.documents?.coverLetters || [];
+    const coverLetterPath = coverLetters.length > 0 ? coverLetters[0].storagePath : null;
 
     if (!coverLetterPath) {
       logger.warn('Skipped COVER_LETTER_UPLOAD\nReason: Profile value missing');
@@ -216,36 +228,40 @@ class GreenhouseConnector extends BaseApplicationConnector {
     }
     
     if (await inputLocator.count() > 0) {
-       try {
-         await this.uploadManager.uploadFile(inputLocator.first(), coverLetterPath);
-         this.completedFields.push('COVER_LETTER_UPLOAD');
-       } catch (err) {
+        try {
+          const firstInput = inputLocator.first();
+          // Force visibility
+          await firstInput.evaluate(el => {
+              el.style.display = 'block';
+              el.style.visibility = 'visible';
+              el.style.opacity = '1';
+          }).catch(() => {});
+
+          await this.uploadManager.uploadFile(firstInput, coverLetterPath);
+          
+          const filename = coverLetterPath.split(/[/\\]/).pop();
+          try {
+            await Promise.any([
+                this.formContext.waitForSelector(`text="${filename}"`, { timeout: 3000 }),
+                firstInput.evaluate((el, name) => el.files && el.files.length > 0 && el.files[0].name === name, filename).then(res => { if(!res) throw new Error('Not found'); })
+            ]);
+          } catch (e) {}
+
+          this.completedFields.push('COVER_LETTER_UPLOAD');
+        } catch (err) {
          logger.warn(`Failed to upload cover letter: ${err.message}`);
          this.pendingFields.push({ label: 'Cover Letter', reason: `Upload failed: ${err.message}` });
        }
     }
   }
 
-  async fillProfile(profileData) {
-    logger.info('Filling profile data using Form Intelligence for EVERY detected field...');
-    
+  async resolveFields(profileData) {
+    logger.info('Resolving fields against profile data...');
     const answerEngine = new AIAnswerEngine(profileData);
+    const resolutionEngine = new CandidateResolutionEngine(profileData, answerEngine);
     const CONFIDENCE_THRESHOLD = 0.85;
 
-    const getNested = (obj, path) => path.split('.').reduce((o, p) => o?.[p], obj);
-
-    const profileMapping = {
-      'FIRST_NAME': getNested(profileData, 'basicInfo.firstName'),
-      'LAST_NAME': getNested(profileData, 'basicInfo.lastName'),
-      'EMAIL': getNested(profileData, 'basicInfo.email'),
-      'PHONE': getNested(profileData, 'basicInfo.phone'),
-      'LINKEDIN_URL': getNested(profileData, 'links.linkedin'),
-      'WEBSITE_URL': getNested(profileData, 'links.portfolio') || getNested(profileData, 'links.github'),
-      'EXPECTED_SALARY': getNested(profileData, 'professionalInfo.expectedSalary'),
-      'NOTICE_PERIOD': getNested(profileData, 'professionalInfo.noticePeriod'),
-      'CURRENT_COMPANY': getNested(profileData, 'professionalInfo.currentCompany'),
-      'VISA_STATUS': getNested(profileData, 'workAuthorization.needSponsorship') ? 'Yes' : 'No'
-    };
+    this.resolvedFieldsToFill = [];
 
     if (!this.formIntelligence || !this.formIntelligence.allFields) {
        logger.warn('Form fields not available for iteration.');
@@ -258,19 +274,29 @@ class GreenhouseConnector extends BaseApplicationConnector {
            const semanticKey = semanticEntry ? semanticEntry[0] : null;
            const confidence = semanticEntry ? semanticEntry[1].confidence : 0;
 
-           if (semanticKey === 'RESUME_UPLOAD' || semanticKey === 'COVER_LETTER_UPLOAD') {
+           if (semanticKey === 'RESUME_UPLOAD' || semanticKey === 'COVER_LETTER_UPLOAD') continue;
+           
+           if (semanticKey === 'UNKNOWN_FIELD') {
+              try {
+                  await LearningRecord.findOneAndUpdate(
+                      { connectorName: 'greenhouse', fieldLabel: field.labelText },
+                      { 
+                          $setOnInsert: { fieldName: field.name, fieldType: field.type, parentSection: field.parentSection },
+                          $inc: { occurrences: 1 } 
+                      },
+                      { upsert: true }
+                  );
+              } catch(err) {}
+              this.pendingFields.push({ label: field.labelText || field.name, reason: 'Unknown field type - Added to Learning Engine' });
               continue;
            }
 
-           let value = null;
-           
-           if (semanticKey && confidence >= CONFIDENCE_THRESHOLD) {
-               if (semanticKey.startsWith('AI_')) {
-                   value = await answerEngine.resolveAnswer(semanticKey);
-               } else {
-                   value = profileMapping[semanticKey];
-               }
+           if (!semanticKey || confidence < CONFIDENCE_THRESHOLD) {
+              this.pendingFields.push({ label: field.labelText || field.name || 'Unknown', reason: `Low confidence mapping (${Math.round(confidence * 100)}%)` });
+              continue;
            }
+
+           const value = await resolutionEngine.resolveValue(semanticKey, field);
 
            let selector = '';
            if (field.id) selector = `#${field.id}`;
@@ -293,38 +319,89 @@ class GreenhouseConnector extends BaseApplicationConnector {
               }
               continue;
            }
-
-           if (selector) {
-              try {
-                 await this.formContext.fill(selector, value);
-                 logger.info(`Filled ${semanticKey} (Confidence: ${confidence})`);
-                 this.completedFields.push(semanticKey);
-              } catch (err) {
-                 logger.warn(`Failed to fill ${semanticKey}: ${err.message}`);
-                 this.pendingFields.push({
-                    label: field.labelText || semanticKey,
-                    reason: `Failed to fill: ${err.message}`
-                 });
-              }
-           }
-       } catch (fieldProcessingError) {
-           logger.error(`Unhandled error during field processing for ${field.name || 'unknown'}: ${fieldProcessingError.message}`);
-           this.pendingFields.push({
-              label: field.labelText || field.name || 'Unknown',
-              reason: `Internal automation error: ${fieldProcessingError.message}`
-           });
+           
+           this.resolvedFieldsToFill.push({ field, semanticKey, value, selector, confidence });
+       } catch (err) {
+           this.pendingFields.push({ label: field.labelText || 'Unknown', reason: `Resolution error: ${err.message}` });
        }
     }
-
-    // Run telemetry
-    const telemetry = new ProfileImprovementEngine(profileData);
-    telemetry.analyzeSkippedFields(this.pendingFields);
+    
+    this.resolutionReport = resolutionEngine.getResolutionReport();
+    logger.info(`Resolution complete. Detected: ${this.resolutionReport.detectedFields}, Resolved: ${this.resolutionReport.resolvedCount}, Skipped: ${this.resolutionReport.skippedCount}`);
   }
 
-  async answerQuestions(profileData) {
-    logger.info('Answering custom questions...');
-    // Future LLM-driven question answering goes here.
+  async generateAIAnswers(profileData) {
+    logger.info('Generating AI answers for contextual fields...');
+    // Future LLM-driven generation
   }
+
+  async fillFields(profileData) {
+     logger.info('Filling resolved fields into DOM...');
+     if (!this.resolvedFieldsToFill) return;
+
+     for (const item of this.resolvedFieldsToFill) {
+         const { field, semanticKey, value, selector, confidence } = item;
+         if (selector) {
+             try {
+                 const locator = this.formContext.locator(selector);
+                 if (field.tagName === 'select' || field.role === 'combobox') {
+                     const options = await locator.locator('option').allInnerTexts();
+                     const match = options.find(opt => opt.toLowerCase().includes(value.toLowerCase()));
+                     if (match) await locator.selectOption({ label: match });
+                     else await locator.fill(value);
+                 } else if (field.type === 'checkbox' || field.type === 'radio') {
+                     await locator.check();
+                 } else {
+                     await locator.fill(value);
+                 }
+                 
+                 logger.info(`Filled ${semanticKey} (Confidence: ${confidence})`);
+                 this.completedFields.push(semanticKey);
+             } catch (err) {
+                 logger.warn(`Failed to fill ${semanticKey}: ${err.message}`);
+                 this.pendingFields.push({ label: field.labelText || semanticKey, reason: `Fill failed: ${err.message}` });
+             }
+         }
+     }
+
+     const telemetry = new ProfileImprovementEngine(profileData);
+     telemetry.analyzeSkippedFields(this.pendingFields);
+  }
+
+  async validateFilledFields() {
+     logger.info('Validating filled fields...');
+     if (!this.resolvedFieldsToFill) return;
+
+     for (const item of this.resolvedFieldsToFill) {
+         const { field, semanticKey, value, selector } = item;
+         if (selector) {
+             try {
+                 const locator = this.formContext.locator(selector);
+                 if (field.type === 'checkbox' || field.type === 'radio') {
+                     const isChecked = await locator.isChecked();
+                     if (!isChecked) {
+                         logger.warn(`Validation Warning: Field ${semanticKey} is not checked as expected.`);
+                     }
+                 } else if (field.tagName === 'select' || field.role === 'combobox') {
+                     // Check selected option text or inputValue
+                     const selectedValue = await locator.inputValue();
+                     if (!selectedValue) {
+                         logger.warn(`Validation Warning: Field ${semanticKey} dropdown has no selected value.`);
+                     }
+                 } else {
+                     const filledValue = await locator.inputValue();
+                     if (filledValue !== value) {
+                         logger.warn(`Validation Warning: Field ${semanticKey} filled value mismatch. Expected ${value}, got ${filledValue}`);
+                     }
+                 }
+             } catch (err) {
+                 logger.warn(`Validation error for ${semanticKey}: ${err.message}`);
+             }
+         }
+     }
+  }
+
+
 
   async review() {
     logger.info('Reviewing application (Greenhouse is typically single page)...');

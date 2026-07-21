@@ -10,14 +10,14 @@ const applicationQueue = new Queue('JobApplications', {
 });
 
 class AutomationWorkerQueue {
-  static async enqueueJob(jobId, userId, connectorName, profileData) {
+  static async enqueueJob(jobId, userId, connectorName) {
     // Create DB Session
     const session = await ApplicationSession.create({
       jobId,
       userId,
       connectorName,
-      status: 'Pending',
-      stateData: { profileData }
+      status: 'Created',
+      stateData: {}
     });
 
     // Add to Queue
@@ -33,6 +33,9 @@ class AutomationWorkerQueue {
         delay: 5000
       }
     });
+
+    session.status = 'Queued';
+    await session.save();
 
     return session;
   }
