@@ -1,11 +1,25 @@
 class BaseApplicationConnector {
-  constructor(context, page, sessionData, applicationSessionId) {
-    this.context = context;
-    this.page = page;
-    this.sessionData = sessionData;
-    this.applicationSessionId = applicationSessionId;
+  constructor(contextOrAutomationContext, page, sessionData, applicationSessionId) {
+    if (contextOrAutomationContext && contextOrAutomationContext.browser) {
+      this.automationContext = contextOrAutomationContext;
+      this.context = contextOrAutomationContext.context;
+      this.page = contextOrAutomationContext.page;
+      this.sessionData = page; // second argument is sessionData when passing automationContext
+      this.applicationSessionId = contextOrAutomationContext.sessionId;
+    } else {
+      this.context = contextOrAutomationContext;
+      this.page = page;
+      this.sessionData = sessionData;
+      this.applicationSessionId = applicationSessionId;
+    }
     this.completedFields = [];
     this.pendingFields = [];
+  }
+
+  logOwnership(stage, ownerName) {
+    if (this.automationContext && typeof this.automationContext.logOwnership === 'function') {
+      this.automationContext.logOwnership(stage, ownerName || this.constructor.name);
+    }
   }
 
   /**

@@ -7,6 +7,7 @@ const ApplicationStateMachine = require('../engine/ApplicationStateMachine');
 const BrowserPool = require('../browser/BrowserPool');
 const ContextManager = require('../browser/ContextManager');
 const SessionManager = require('../browser/SessionManager');
+const AutomationContext = require('../browser/AutomationContext');
 const GreenhouseConnector = require('../connectors/greenhouse/GreenhouseConnector');
 const TelemetryManager = require('../telemetry/TelemetryManager');
 const BrowserEventLogger = require('../telemetry/BrowserEventLogger');
@@ -55,7 +56,7 @@ async function bootstrap() {
       const stateMachine = new ApplicationStateMachine(sessionId);
       const telemetry = new TelemetryManager(sessionId, connectorName);
       const eventLogger = new BrowserEventLogger(sessionId);
-      let browser, context, page;
+      let browser, context, page, automationContext;
       
       try {
         const startTime = Date.now();
@@ -71,10 +72,10 @@ async function bootstrap() {
         // Load session info
         const appSession = await stateMachine.load();
         
-        if (appSession.status === 'WaitingForUser') {
-            await stateMachine.updateState('ReadyForSubmission');
-        } else {
+        if (appSession.status === 'Queued' || appSession.status === 'Created') {
             await stateMachine.updateState('WorkerAssigned');
+        } else if (appSession.status === 'WaitingForUser') {
+            await stateMachine.updateState('ReadyForSubmission');
         }
         
         const runStep = async (targetState, fn) => {
@@ -84,21 +85,8 @@ async function bootstrap() {
             }
         };
 
-        // Resumable Profile Loading
+        // PHASE 1: Profile Loading & Validation (PLAYWRIGHT-FREE)
         let profileData;
-        await runStep('BrowserStarting');
-        
-        await runStep('BrowserReady', async () => {
-            browser = await BrowserPool.acquire();
-            const contextManager = new ContextManager(browser);
-            context = await contextManager.createContext();
-            
-            const browserSession = await SessionManager.getOrCreateSession(userId, connectorName);
-            await contextManager.injectSessionData(context, browserSession);
-
-            page = await context.newPage();
-        });
-
         await runStep('LoadingProfile', async () => {
             profileData = await CandidateProfileResolver.fetchAndNormalize(userId);
             
@@ -141,25 +129,58 @@ async function bootstrap() {
                projectsCount: profileData.projects.length,
                completionPercentage: validationReport.completion
             });
+
+            // Cache validation report for RootCauseReport
+            const ApplicationSession = require('../../models/ApplicationSession');
+            await ApplicationSession.findByIdAndUpdate(sessionId, { $set: { 'stateData.validationReport': validationReport } });
         });
 
-        // Need to pass page to connector, even if skipping BrowserReady
-        // Wait, if we skipped BrowserReady, `page` isn't defined!
-        // Resumability requires browser to be open. So `BrowserStarting` and `BrowserReady` MUST ALWAYS EXECUTE if we don't have a browser.
-        // Actually, since this is a worker process and the browser context was closed when the job threw the error, we ALWAYS need a new browser when the job starts.
-        // So `BrowserStarting` shouldn't be skipped.
-        // Let's modify shouldExecute logic inside runStep.
+        // PHASE 2: Single Browser Acquisition & Context Initialization
+        await runStep('BrowserStarting');
         
-        // Phase 1: Setup Browser & Context (ALWAYS RUN on new worker pick up)
-        browser = await BrowserPool.acquire();
-        const contextManager = new ContextManager(browser);
-        context = await contextManager.createContext();
-        
-        const browserSession = await SessionManager.getOrCreateSession(userId, connectorName);
-        await contextManager.injectSessionData(context, browserSession);
+        await runStep('BrowserReady', async () => {
+            browser = await BrowserPool.acquire(sessionId);
+            const contextManager = new ContextManager(browser);
+            context = await contextManager.createContext();
+            
+            const browserSession = await SessionManager.getOrCreateSession(userId, connectorName);
+            await contextManager.injectSessionData(context, browserSession);
 
-        page = await context.newPage();
-        const connector = new ConnectorClass(context, page, browserSession, sessionId);
+            page = await context.newPage();
+            automationContext = new AutomationContext({
+                sessionId,
+                jobId,
+                userId,
+                browser,
+                context,
+                page,
+                owner: 'WorkerProcessor'
+            });
+            automationContext.logOwnership('BrowserReady', 'WorkerProcessor');
+        });
+
+        // Ensure browser context exists if resuming past BrowserReady
+        if (!automationContext) {
+            browser = await BrowserPool.acquire(sessionId);
+            const contextManager = new ContextManager(browser);
+            context = await contextManager.createContext();
+            const browserSession = await SessionManager.getOrCreateSession(userId, connectorName);
+            await contextManager.injectSessionData(context, browserSession);
+            page = await context.newPage();
+            automationContext = new AutomationContext({
+                sessionId,
+                jobId,
+                userId,
+                browser,
+                context,
+                page,
+                owner: 'WorkerProcessor'
+            });
+            automationContext.logOwnership('BrowserReadyResumed', 'WorkerProcessor');
+        }
+
+        const browserSession = await SessionManager.getOrCreateSession(userId, connectorName);
+        const connector = new ConnectorClass(automationContext, browserSession);
 
         // Run State Machine flow
         telemetry.startPageLoad();
@@ -204,6 +225,12 @@ async function bootstrap() {
         const completionPercentage = totalFields === 0 ? 100 : Math.round((completedFields.length / totalFields) * 100);
         const executionTimeSec = Math.round((Date.now() - startTime) / 1000);
         
+        const rootCauseReport = {
+            profileCompleteness: appSession.stateData?.validationReport || null,
+            resolutionReport: connector.resolutionReport || null,
+            finalAction: pendingFields.length > 0 ? 'Paused for manual input' : 'Submitted'
+        };
+
         const applicationReport = {
             totalFieldsDetected: totalFields,
             fieldsFilled: completedFields.length,
@@ -213,7 +240,7 @@ async function bootstrap() {
             executionTimeSeconds: executionTimeSec,
             aiGeneratedAnswers: completedFields.filter(f => f.startsWith('AI_')).length,
             uploadsCompleted: completedFields.filter(f => f.includes('UPLOAD')).length,
-            resolutionReport: connector.resolutionReport || null
+            rootCauseReport
         };
 
         if (pendingFields.length > 0) {
@@ -324,7 +351,7 @@ async function bootstrap() {
         
         if (browser) {
             if (!keepBrowserOpen) {
-                BrowserPool.release(browser);
+                BrowserPool.release(browser, sessionId);
             } else {
                 logger.info('Not releasing browser to pool; waiting for manual user intervention. Setting 15 min timeout.');
                 // Add a 15-minute timeout to reclaim the browser if the user abandons it
@@ -332,7 +359,7 @@ async function bootstrap() {
                    try {
                        logger.warn(`15-minute intervention timeout reached for session ${sessionId}. Reclaiming browser.`);
                        if (context) await context.close().catch(() => {});
-                       BrowserPool.release(browser);
+                       BrowserPool.release(browser, sessionId);
                    } catch (e) {}
                 }, 15 * 60 * 1000);
             }

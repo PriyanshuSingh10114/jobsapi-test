@@ -16,61 +16,93 @@ class FormIntelligence {
     const formFields = await context.evaluate(() => {
       // Find all standard and custom input fields (including React Select, contenteditable, etc)
       const inputs = Array.from(document.querySelectorAll('input, select, textarea, [role="combobox"], [contenteditable="true"]'));
-      
-      return inputs.map((input, index) => {
-        let labelText = '';
-        
-        // 1. Explicit label
-        if (input.id) {
-          const label = document.querySelector(`label[for="${input.id}"]`);
-          if (label) labelText = label.innerText;
-        }
-        
-        // 2. Closest wrapper
-        if (!labelText) {
-          const wrapper = input.closest('label, .field-wrapper, .form-group');
-          if (wrapper) {
-             const lbl = wrapper.querySelector('label');
-             labelText = lbl ? lbl.innerText : wrapper.innerText;
-          }
-        }
-
-        // 3. ARIA label
-        if (!labelText) labelText = input.getAttribute('aria-label') || '';
-
-        // 4. Placeholder
-        if (!labelText) labelText = input.getAttribute('placeholder') || '';
-        
-        // 5. Check parent section for context (e.g. 'Education', 'Experience')
-        let parentSection = '';
-        const sectionEl = input.closest('fieldset, section, .section, .block');
-        if (sectionEl) {
-           const heading = sectionEl.querySelector('legend, h1, h2, h3, h4');
-           if (heading) parentSection = heading.innerText;
-        }
-
-        const autocomplete = input.getAttribute('autocomplete') || '';
-        const required = input.hasAttribute('required') || input.getAttribute('aria-required') === 'true';
-        const role = input.getAttribute('role') || '';
-        
-        // Check if it's a hidden file input (for drag and drop)
-        const isHiddenFile = input.type === 'file' && (input.style.display === 'none' || input.style.visibility === 'hidden' || input.style.opacity === '0');
-
-        return {
-          index,
-          id: input.id,
-          name: input.name,
-          type: input.type,
-          autocomplete,
-          required,
-          role,
-          parentSection: parentSection.trim().replace(/\n/g, ' '),
-          isHiddenFile,
-          labelText: labelText.trim().replace(/\n/g, ' '),
-          tagName: input.tagName.toLowerCase(),
-          isVisible: input.offsetWidth > 0 && input.offsetHeight > 0
+        const generateCssPath = (el) => {
+            if (!(el instanceof Element)) return;
+            const path = [];
+            while (el.nodeType === Node.ELEMENT_NODE) {
+                let selector = el.nodeName.toLowerCase();
+                if (el.id) {
+                    selector += '#' + el.id;
+                    path.unshift(selector);
+                    break;
+                } else {
+                    let sib = el, nth = 1;
+                    while (sib = sib.previousElementSibling) {
+                        if (sib.nodeName.toLowerCase() == selector) nth++;
+                    }
+                    if (nth != 1) selector += ":nth-of-type("+nth+")";
+                }
+                path.unshift(selector);
+                el = el.parentNode;
+            }
+            return path.join(" > ");
         };
-      }).filter(field => field.type !== 'hidden' && field.type !== 'submit'); // Skip normal hidden inputs, but we keep hidden files logic above
+
+        return inputs.map((input, index) => {
+          let labelText = '';
+          
+          // 1. Explicit label
+          if (input.id) {
+            const label = document.querySelector(`label[for="${input.id}"]`);
+            if (label) labelText = label.innerText;
+          }
+          
+          // 2. Closest wrapper
+          if (!labelText) {
+            const wrapper = input.closest('label, .field-wrapper, .form-group');
+            if (wrapper) {
+               const lbl = wrapper.querySelector('label');
+               labelText = lbl ? lbl.innerText : wrapper.innerText;
+            }
+          }
+
+          // 3. ARIA label
+          if (!labelText) labelText = input.getAttribute('aria-label') || '';
+
+          // 4. Placeholder
+          if (!labelText) labelText = input.getAttribute('placeholder') || '';
+          
+          // 5. Check parent section for context (e.g. 'Education', 'Experience')
+          let parentSection = '';
+          const sectionEl = input.closest('fieldset, section, .section, .block');
+          if (sectionEl) {
+             const heading = sectionEl.querySelector('legend, h1, h2, h3, h4');
+             if (heading) parentSection = heading.innerText;
+          }
+
+          const autocomplete = input.getAttribute('autocomplete') || '';
+          const required = input.hasAttribute('required') || input.getAttribute('aria-required') === 'true';
+          const role = input.getAttribute('role') || '';
+          
+          const isHiddenFile = input.type === 'file' && (input.style.display === 'none' || input.style.visibility === 'hidden' || input.style.opacity === '0');
+
+          let controlType = 'text';
+          const tagName = input.tagName.toLowerCase();
+          if (tagName === 'select' || role === 'combobox' || role === 'listbox') controlType = 'dropdown';
+          else if (input.type === 'checkbox') controlType = 'checkbox';
+          else if (input.type === 'radio') controlType = 'radio';
+          else if (input.type === 'file') controlType = 'file';
+          else if (tagName === 'textarea') controlType = 'textarea';
+
+          const cssPath = generateCssPath(input);
+
+          return {
+            index,
+            id: input.id,
+            name: input.name,
+            type: input.type,
+            autocomplete,
+            required,
+            role,
+            parentSection: parentSection.trim().replace(/\n/g, ' '),
+            isHiddenFile,
+            labelText: labelText.trim().replace(/\n/g, ' '),
+            tagName,
+            controlType,
+            cssPath,
+            isVisible: input.offsetWidth > 0 && input.offsetHeight > 0
+          };
+        }).filter(field => field.type !== 'hidden' && field.type !== 'submit'); // Skip normal hidden inputs, but we keep hidden files logic above
     });
 
     this.allFields = formFields;

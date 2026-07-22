@@ -7,15 +7,20 @@ const UploadManager = require('../../managers/UploadManager');
 const AIAnswerEngine = require('../../engine/AIAnswerEngine');
 const CandidateResolutionEngine = require('../../engine/CandidateResolutionEngine');
 const ResumeSelector = require('../../engine/ResumeSelector');
+const DropdownNormalizer = require('../../engine/DropdownNormalizer');
 const ProfileImprovementEngine = require('../../telemetry/ProfileImprovementEngine');
-const LearningRecord = require('../../../models/LearningRecord');
+const FieldFillEngine = require('../../engine/FieldFillEngine');
+const ValidationEngine = require('../../engine/ValidationEngine');
 
 class GreenhouseConnector extends BaseApplicationConnector {
   async initialize() {
     logger.info('Initializing GreenhouseConnector with Intelligence Engines...');
+    this.logOwnership('ConnectorInitialization', 'GreenhouseConnector');
     this.locatorEngine = new LocatorEngine(this.page);
     this.formIntelligence = new FormIntelligence(this.page, this.locatorEngine);
     this.uploadManager = new UploadManager(this.page);
+    this.fieldFillEngine = new FieldFillEngine(this.page);
+    this.validationEngine = new ValidationEngine(this.page);
     
     const browserSessionId = this.sessionData ? this.sessionData.sessionId : null;
     this.screenshotManager = new ScreenshotManager(this.page, this.applicationSessionId, browserSessionId);
@@ -30,6 +35,7 @@ class GreenhouseConnector extends BaseApplicationConnector {
 
   async openJob(jobUrl) {
     logger.info(`Opening Greenhouse job: ${jobUrl}`);
+    this.logOwnership('OpeningJob', 'GreenhouseConnector');
     await this.page.goto(jobUrl, { waitUntil: 'domcontentloaded' });
   }
 
@@ -165,11 +171,13 @@ class GreenhouseConnector extends BaseApplicationConnector {
     logger.info(`Uploading resume: ${resumePath}`);
     
     let inputLocator;
-    if (resumeField && resumeField.id) {
+    if (resumeField && resumeField.cssPath) {
+       inputLocator = this.formContext.locator(resumeField.cssPath);
+    } else if (resumeField && resumeField.id) {
        inputLocator = this.formContext.locator(`#${resumeField.id}`);
     } else {
        logger.warn('FormIntelligence missed resume upload; using semantic fallback strategy.');
-       inputLocator = this.formContext.locator('input[type="file"][data-source="resume"], input[type="file"][aria-label*="resume" i]');
+       inputLocator = this.formContext.locator('input[type="file"]');
     }
     
     if (await inputLocator.count() > 0) {
@@ -183,21 +191,14 @@ class GreenhouseConnector extends BaseApplicationConnector {
               el.style.position = 'static';
           }).catch(() => {});
 
-          await this.uploadManager.uploadFile(firstInput, resumePath);
+          await this.fieldFillEngine.fillField({ controlType: 'file' }, resumePath, firstInput);
           
-          // Verify the upload by checking if the filename appears in the DOM or input property
-          const filename = resumePath.split(/[/\\]/).pop();
-          try {
-            await Promise.any([
-                this.formContext.waitForSelector(`text="${filename}"`, { timeout: 3000 }),
-                firstInput.evaluate((el, name) => el.files && el.files.length > 0 && el.files[0].name === name, filename).then(res => { if(!res) throw new Error('Not found'); })
-            ]);
-            this.completedFields.push('RESUME_UPLOAD');
-          } catch (verifyErr) {
-           logger.warn(`Uploaded resume but could not verify filename "${filename}" in DOM.`);
-           // Still mark as completed as some ATS hide the filename
-           this.completedFields.push('RESUME_UPLOAD');
-         }
+          const isFilled = await this.validationEngine.isFilled({ controlType: 'file' }, firstInput);
+          if (isFilled) {
+             this.completedFields.push('RESUME_UPLOAD');
+          } else {
+             throw new Error('Verification failed after upload.');
+          }
        } catch (err) {
          logger.warn(`Failed to upload resume: ${err.message}`);
          this.pendingFields.push({ label: 'Resume', reason: `Upload failed: ${err.message}` });
@@ -221,37 +222,29 @@ class GreenhouseConnector extends BaseApplicationConnector {
     logger.info(`Uploading cover letter: ${coverLetterPath}`);
     
     let inputLocator;
-    if (clField && clField.id) {
+    if (clField && clField.cssPath) {
+       inputLocator = this.formContext.locator(clField.cssPath);
+    } else if (clField && clField.id) {
        inputLocator = this.formContext.locator(`#${clField.id}`);
     } else {
-       inputLocator = this.formContext.locator('input[type="file"][data-source="cover_letter"], input[type="file"][aria-label*="cover letter" i]');
+       inputLocator = this.formContext.locator('input[type="file"]').nth(1);
     }
     
     if (await inputLocator.count() > 0) {
         try {
           const firstInput = inputLocator.first();
-          // Force visibility
           await firstInput.evaluate(el => {
               el.style.display = 'block';
               el.style.visibility = 'visible';
               el.style.opacity = '1';
           }).catch(() => {});
 
-          await this.uploadManager.uploadFile(firstInput, coverLetterPath);
-          
-          const filename = coverLetterPath.split(/[/\\]/).pop();
-          try {
-            await Promise.any([
-                this.formContext.waitForSelector(`text="${filename}"`, { timeout: 3000 }),
-                firstInput.evaluate((el, name) => el.files && el.files.length > 0 && el.files[0].name === name, filename).then(res => { if(!res) throw new Error('Not found'); })
-            ]);
-          } catch (e) {}
-
+          await this.fieldFillEngine.fillField({ controlType: 'file' }, coverLetterPath, firstInput);
           this.completedFields.push('COVER_LETTER_UPLOAD');
         } catch (err) {
-         logger.warn(`Failed to upload cover letter: ${err.message}`);
-         this.pendingFields.push({ label: 'Cover Letter', reason: `Upload failed: ${err.message}` });
-       }
+          logger.warn(`Failed to upload cover letter: ${err.message}`);
+          this.pendingFields.push({ label: 'Cover Letter', reason: `Upload failed: ${err.message}` });
+        }
     }
   }
 
@@ -299,7 +292,8 @@ class GreenhouseConnector extends BaseApplicationConnector {
            const value = await resolutionEngine.resolveValue(semanticKey, field);
 
            let selector = '';
-           if (field.id) selector = `#${field.id}`;
+           if (field.cssPath) selector = field.cssPath;
+           else if (field.id) selector = `#${field.id}`;
            else if (field.name) selector = `[name="${field.name}"]`;
 
            if (!value) {
@@ -344,16 +338,7 @@ class GreenhouseConnector extends BaseApplicationConnector {
          if (selector) {
              try {
                  const locator = this.formContext.locator(selector);
-                 if (field.tagName === 'select' || field.role === 'combobox') {
-                     const options = await locator.locator('option').allInnerTexts();
-                     const match = options.find(opt => opt.toLowerCase().includes(value.toLowerCase()));
-                     if (match) await locator.selectOption({ label: match });
-                     else await locator.fill(value);
-                 } else if (field.type === 'checkbox' || field.type === 'radio') {
-                     await locator.check();
-                 } else {
-                     await locator.fill(value);
-                 }
+                 await this.fieldFillEngine.fillField(field, value, locator);
                  
                  logger.info(`Filled ${semanticKey} (Confidence: ${confidence})`);
                  this.completedFields.push(semanticKey);
@@ -377,22 +362,10 @@ class GreenhouseConnector extends BaseApplicationConnector {
          if (selector) {
              try {
                  const locator = this.formContext.locator(selector);
-                 if (field.type === 'checkbox' || field.type === 'radio') {
-                     const isChecked = await locator.isChecked();
-                     if (!isChecked) {
-                         logger.warn(`Validation Warning: Field ${semanticKey} is not checked as expected.`);
-                     }
-                 } else if (field.tagName === 'select' || field.role === 'combobox') {
-                     // Check selected option text or inputValue
-                     const selectedValue = await locator.inputValue();
-                     if (!selectedValue) {
-                         logger.warn(`Validation Warning: Field ${semanticKey} dropdown has no selected value.`);
-                     }
-                 } else {
-                     const filledValue = await locator.inputValue();
-                     if (filledValue !== value) {
-                         logger.warn(`Validation Warning: Field ${semanticKey} filled value mismatch. Expected ${value}, got ${filledValue}`);
-                     }
+                 const isFilled = await this.validationEngine.isFilled(field, locator);
+                 
+                 if (!isFilled) {
+                     logger.warn(`Validation Warning: Field ${semanticKey} is not filled correctly.`);
                  }
              } catch (err) {
                  logger.warn(`Validation error for ${semanticKey}: ${err.message}`);

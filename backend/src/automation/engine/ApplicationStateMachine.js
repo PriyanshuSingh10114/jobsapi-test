@@ -48,10 +48,10 @@ class ApplicationStateMachine {
       'Created',
       'Queued',
       'WorkerAssigned',
-      'BrowserStarting',
-      'BrowserReady',
       'LoadingProfile',
       'ValidatingProfile',
+      'BrowserStarting',
+      'BrowserReady',
       'OpeningJob',
       'AnalyzingPage',
       'AnalyzingForm',
@@ -97,6 +97,11 @@ class ApplicationStateMachine {
     
     // If the worker tries to transition to Failed when it's already Failed, block it explicitly
     if (currentState === 'Failed' && newState === 'Failed') {
+        return false;
+    }
+
+    // Never transition ValidatingProfile -> ValidatingProfile
+    if (currentState === 'ValidatingProfile' && newState === 'ValidatingProfile') {
         return false;
     }
 

@@ -23,17 +23,17 @@ class CandidateProfileResolver {
     // PHASE 2: NORMALIZATION
     const normalized = {
       personal: {
-        firstName: raw.basicInfo?.firstName || '',
+        firstName: raw.basicInfo?.firstName || raw.firstName || '',
         middleName: raw.basicInfo?.middleName || '',
-        lastName: raw.basicInfo?.lastName || '',
-        preferredName: raw.basicInfo?.preferredName || '',
+        lastName: raw.basicInfo?.lastName || raw.lastName || '',
+        preferredName: raw.basicInfo?.preferredName || raw.firstName || '',
         dob: raw.basicInfo?.dob || '',
         pronouns: raw.basicInfo?.pronouns || ''
       },
       contact: {
-        email: raw.basicInfo?.email || '',
+        email: raw.basicInfo?.email || raw.email || '',
         secondaryEmail: raw.basicInfo?.secondaryEmail || '',
-        phone: raw.basicInfo?.phone || '',
+        phone: raw.basicInfo?.phone || raw.phone || '',
         countryCode: raw.basicInfo?.countryCode || ''
       },
       location: {
@@ -70,7 +70,20 @@ class CandidateProfileResolver {
       },
       preferences: raw.preferences || {},
       demographics: raw.demographic || {},
-      links: raw.links || {},
+      links: {
+          linkedin: raw.links?.linkedin || raw.linkedin || '',
+          github: raw.links?.github || raw.github || '',
+          portfolio: raw.links?.portfolio || raw.portfolio || '',
+          personalWebsite: raw.links?.personalWebsite || '',
+          kaggle: raw.links?.kaggle || '',
+          medium: raw.links?.medium || '',
+          devto: raw.links?.devto || '',
+          stackoverflow: raw.links?.stackoverflow || '',
+          behance: raw.links?.behance || '',
+          dribbble: raw.links?.dribbble || '',
+          googleScholar: raw.links?.googleScholar || '',
+          orcid: raw.links?.orcid || ''
+      },
       answers: raw.answerBank || {},
       documents: {
         defaultResume: null,
@@ -105,6 +118,22 @@ class CandidateProfileResolver {
         // File does not exist physically, so we do not add it to normalized.documents
       }
     }
+    
+    // Fallback to legacy root resumePath if no assets were found
+    if (normalized.documents.resumes.length === 0 && raw.resumePath) {
+        try {
+            await fs.access(raw.resumePath, fs.constants.R_OK);
+            normalized.documents.resumes.push({
+                id: 'legacy-root',
+                filename: path.basename(raw.resumePath),
+                storagePath: raw.resumePath,
+                atsScore: 0
+            });
+            logger.info('CandidateProfileResolver: Successfully mapped legacy root resumePath.');
+        } catch(e) {
+            logger.warn(`Legacy resumePath ${raw.resumePath} was unreadable.`);
+        }
+    }
 
     // Sort resumes by ATS score descending and pick default
     if (normalized.documents.resumes.length > 0) {
@@ -124,30 +153,49 @@ class CandidateProfileResolver {
   static validate(profile) {
     const criticalErrors = [];
     const warnings = [];
+    const completenessReport = [];
+    let filledFields = 0;
+    const totalExpectedFields = 10;
+
+    const checkField = (name, isValid, isCritical) => {
+        completenessReport.push({ field: name, complete: isValid });
+        if (isValid) {
+            filledFields++;
+        } else {
+            if (isCritical) criticalErrors.push(name);
+            else warnings.push(name);
+        }
+    };
 
     // Critical Errors (Must stop automation)
-    if (!profile.contact.email) criticalErrors.push('Email');
-    if (!profile.personal.firstName || !profile.personal.lastName) criticalErrors.push('Full Name');
-    if (!profile.documents.defaultResume) criticalErrors.push('Resume');
+    checkField('Email', !!profile.contact.email, true);
+    checkField('Full Name', !!(profile.personal.firstName && profile.personal.lastName), true);
+    checkField('Resume', !!profile.documents.defaultResume, true);
 
     // Warnings (Can continue automation)
-    if (!profile.contact.phone) warnings.push('Phone');
-    if (!profile.links.linkedin) warnings.push('LinkedIn URL');
-    if (!profile.links.portfolio) warnings.push('Portfolio URL');
-    if (profile.education.length === 0) warnings.push('Education');
-    if (profile.experience.length === 0) warnings.push('Experience');
-    if (profile.projects.length === 0) warnings.push('Projects');
-    if (profile.certifications.length === 0) warnings.push('Certifications');
+    checkField('Phone', !!profile.contact.phone, false);
+    checkField('LinkedIn URL', !!profile.links.linkedin, false);
+    checkField('Portfolio URL', !!profile.links.portfolio, false);
+    checkField('Country', !!profile.location.country, false);
+    checkField('City', !!profile.location.city, false);
+    checkField('Education', profile.education.length > 0, false);
+    checkField('Experience', profile.experience.length > 0, false);
+    
+    // Additional Optional
+    if (profile.documents.coverLetters.length > 0) {
+        completenessReport.push({ field: 'Cover Letter', complete: true });
+    } else {
+        completenessReport.push({ field: 'Cover Letter', complete: false });
+    }
 
-    const totalExpectedFields = 10;
-    const filledFields = totalExpectedFields - criticalErrors.length - warnings.length;
     const completion = Math.round((filledFields / totalExpectedFields) * 100);
 
     return {
       canContinue: criticalErrors.length === 0,
       criticalErrors,
       warnings,
-      completion
+      completion,
+      completenessReport
     };
   }
 }
