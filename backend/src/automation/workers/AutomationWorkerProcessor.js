@@ -8,23 +8,17 @@ const BrowserPool = require('../browser/BrowserPool');
 const ContextManager = require('../browser/ContextManager');
 const SessionManager = require('../browser/SessionManager');
 const AutomationContext = require('../browser/AutomationContext');
-const GreenhouseConnector = require('../connectors/greenhouse/GreenhouseConnector');
+const ActiveSessionRegistry = require('../browser/ActiveSessionRegistry');
+const AutomationDiagnosticsReport = require('../telemetry/AutomationDiagnosticsReport');
+const ATSConnectorFactory = require('../connectors/factory/ATSConnectorFactory');
+const ATSDetectionEngine = require('../connectors/factory/ATSDetectionEngine');
+const CandidateKnowledgeGraph = require('../engine/CandidateKnowledgeGraph');
+const ResumeTailoringService = require('../engine/ResumeTailoringService');
 const TelemetryManager = require('../telemetry/TelemetryManager');
 const BrowserEventLogger = require('../telemetry/BrowserEventLogger');
 const CandidateProfileResolver = require('../engine/CandidateProfileResolver');
 const Job = require('../../models/Job');
 const logger = require('../../config/logger');
-
-// Strategy pattern for selecting connector
-const getConnectorClass = (name) => {
-  switch (name.toLowerCase()) {
-    case 'greenhouse':
-      return GreenhouseConnector;
-    // Add other ATS connectors here
-    default:
-      return null;
-  }
-};
 
 async function bootstrap() {
   try {
@@ -56,7 +50,7 @@ async function bootstrap() {
       const stateMachine = new ApplicationStateMachine(sessionId);
       const telemetry = new TelemetryManager(sessionId, connectorName);
       const eventLogger = new BrowserEventLogger(sessionId);
-      let browser, context, page, automationContext;
+      let browser, context, page, automationContext, connector;
       
       try {
         const startTime = Date.now();
@@ -66,8 +60,9 @@ async function bootstrap() {
         const targetJob = await Job.findById(jobId);
         if (!targetJob) throw new Error('Job not found in database');
 
-        const ConnectorClass = getConnectorClass(connectorName);
-        if (!ConnectorClass) throw new Error(`Unsupported connector: ${connectorName}`);
+        // Detect ATS dynamically if not provided or generic
+        const detection = await ATSDetectionEngine.detect(targetJob.applyUrl);
+        const resolvedATSKey = (connectorName && connectorName !== 'generic') ? connectorName : detection.atsKey;
 
         // Load session info
         const appSession = await stateMachine.load();
@@ -78,33 +73,54 @@ async function bootstrap() {
             await stateMachine.updateState('ReadyForSubmission');
         }
         
+        const logStepProgress = (stateName) => {
+            logger.info(`----------------------------------------`);
+            logger.info(`Job: ${targetJob._id}`);
+            logger.info(`Company: ${targetJob.company}`);
+            logger.info(`ATS: ${resolvedATSKey}`);
+            logger.info(`Connector: ${connector ? connector.constructor.name : 'Pending'}`);
+            logger.info(`Worker: AutomationWorker`);
+            logger.info(`Browser: Chromium`);
+            logger.info(`State: ${stateName}`);
+            logger.info(`----------------------------------------`);
+        };
+
         const runStep = async (targetState, fn) => {
             if (stateMachine.shouldExecute(targetState)) {
+                logStepProgress(targetState);
                 await stateMachine.updateState(targetState);
                 if (fn) await fn();
             }
         };
 
         // PHASE 1: Profile Loading & Validation (PLAYWRIGHT-FREE)
+        let candidateKG;
         let profileData;
         await runStep('LoadingProfile', async () => {
-            profileData = await CandidateProfileResolver.fetchAndNormalize(userId);
+            candidateKG = await CandidateKnowledgeGraph.loadForUser(userId);
+            profileData = candidateKG.toNormalizedProfile();
             
-            // Log the normalized profile before resolution
-            await eventLogger.info('ProfileNormalized', 'Candidate Profile fetched and normalized successfully', {
+            await eventLogger.info('ProfileNormalized', 'Candidate Profile Knowledge Graph loaded successfully', {
                 educationCount: profileData.education?.length || 0,
                 experienceCount: profileData.experience?.length || 0,
                 hasDefaultResume: !!profileData.documents?.defaultResume,
                 hasCoverLetter: profileData.documents?.coverLetters?.length > 0
             });
 
-            // Cache normalized profile in DB stateData for debugging if needed
             const ApplicationSession = require('../../models/ApplicationSession');
             await ApplicationSession.findByIdAndUpdate(sessionId, { $set: { 'stateData.profileData': profileData } });
         });
         
-        // If skipped LoadingProfile, we still need profileData in memory for later steps
-        if (!profileData) profileData = appSession.stateData?.profileData || await CandidateProfileResolver.fetchAndNormalize(userId);
+        if (!profileData) {
+          candidateKG = await CandidateKnowledgeGraph.loadForUser(userId);
+          profileData = candidateKG.toNormalizedProfile();
+        }
+
+        // Tailor resume & assets for target job
+        const tailoringResult = await ResumeTailoringService.tailorForJob(candidateKG, targetJob);
+        if (tailoringResult.selectedResumePath) {
+          profileData.documents.defaultResume = tailoringResult.selectedResumePath;
+        }
 
         await runStep('ValidatingProfile', async () => {
             const validationReport = CandidateProfileResolver.validate(profileData);
@@ -116,55 +132,49 @@ async function bootstrap() {
                 throw error;
             }
 
-            if (validationReport.warnings.length > 0) {
-                await eventLogger.info('ProfileValidationWarning', `Profile has warnings but automation will continue. Missing optional fields: ${validationReport.warnings.join(', ')}`, validationReport);
-            }
-
-            await eventLogger.info('ProfileDiagnostics', 'Profile successfully resolved and validated.', {
-               resume: !!profileData.documents.defaultResume,
-               linkedin: !!profileData.links.linkedin,
-               phone: !!profileData.contact.phone,
-               educationCount: profileData.education.length,
-               experienceCount: profileData.experience.length,
-               projectsCount: profileData.projects.length,
-               completionPercentage: validationReport.completion
-            });
-
-            // Cache validation report for RootCauseReport
             const ApplicationSession = require('../../models/ApplicationSession');
             await ApplicationSession.findByIdAndUpdate(sessionId, { $set: { 'stateData.validationReport': validationReport } });
         });
 
-        // PHASE 2: Single Browser Acquisition & Context Initialization
+        // PHASE 2: Single Browser Acquisition & Active Session Reuse
         await runStep('BrowserStarting');
         
-        await runStep('BrowserReady', async () => {
-            browser = await BrowserPool.acquire(sessionId);
-            const contextManager = new ContextManager(browser);
-            context = await contextManager.createContext();
-            
-            const browserSession = await SessionManager.getOrCreateSession(userId, connectorName);
-            await contextManager.injectSessionData(context, browserSession);
+        if (ActiveSessionRegistry.has(sessionId)) {
+            automationContext = ActiveSessionRegistry.get(sessionId);
+            browser = automationContext.browser;
+            context = automationContext.context;
+            page = automationContext.page;
+            automationContext.logOwnership('ResumedActiveSession', 'WorkerProcessor');
+            logger.info(`[WorkerProcessor] Reusing active browser session for ${sessionId} without re-acquiring browser.`);
+        } else {
+            await runStep('BrowserReady', async () => {
+                browser = await BrowserPool.acquire(sessionId);
+                const contextManager = new ContextManager(browser);
+                context = await contextManager.createContext();
+                
+                const browserSession = await SessionManager.getOrCreateSession(userId, resolvedATSKey);
+                await contextManager.injectSessionData(context, browserSession);
 
-            page = await context.newPage();
-            automationContext = new AutomationContext({
-                sessionId,
-                jobId,
-                userId,
-                browser,
-                context,
-                page,
-                owner: 'WorkerProcessor'
+                page = await context.newPage();
+                automationContext = new AutomationContext({
+                    sessionId,
+                    jobId,
+                    userId,
+                    browser,
+                    context,
+                    page,
+                    owner: 'WorkerProcessor'
+                });
+                automationContext.logOwnership('BrowserReady', 'WorkerProcessor');
+                ActiveSessionRegistry.register(sessionId, automationContext);
             });
-            automationContext.logOwnership('BrowserReady', 'WorkerProcessor');
-        });
+        }
 
-        // Ensure browser context exists if resuming past BrowserReady
         if (!automationContext) {
             browser = await BrowserPool.acquire(sessionId);
             const contextManager = new ContextManager(browser);
             context = await contextManager.createContext();
-            const browserSession = await SessionManager.getOrCreateSession(userId, connectorName);
+            const browserSession = await SessionManager.getOrCreateSession(userId, resolvedATSKey);
             await contextManager.injectSessionData(context, browserSession);
             page = await context.newPage();
             automationContext = new AutomationContext({
@@ -177,10 +187,22 @@ async function bootstrap() {
                 owner: 'WorkerProcessor'
             });
             automationContext.logOwnership('BrowserReadyResumed', 'WorkerProcessor');
+            ActiveSessionRegistry.register(sessionId, automationContext);
         }
 
-        const browserSession = await SessionManager.getOrCreateSession(userId, connectorName);
-        const connector = new ConnectorClass(automationContext, browserSession);
+        const browserSession = await SessionManager.getOrCreateSession(userId, resolvedATSKey);
+        connector = ATSConnectorFactory.createConnector(resolvedATSKey, automationContext, browserSession);
+
+        // Restore cached telemetry and execution state if resuming
+        if (appSession.stateData?.completedFields) {
+          connector.completedFields = appSession.stateData.completedFields || [];
+        }
+        if (appSession.stateData?.pendingFields) {
+          connector.pendingFields = appSession.stateData.pendingFields || [];
+        }
+        if (appSession.stateData?.uploadResults) {
+          connector.uploadResults = appSession.stateData.uploadResults || [];
+        }
 
         // Run State Machine flow
         telemetry.startPageLoad();
@@ -195,7 +217,6 @@ async function bootstrap() {
         });
         
         await runStep('AnalyzingForm', async () => {
-             // detection populated the semantic map
              logger.info('AnalyzingForm completed');
         });
 
@@ -225,38 +246,44 @@ async function bootstrap() {
         const completionPercentage = totalFields === 0 ? 100 : Math.round((completedFields.length / totalFields) * 100);
         const executionTimeSec = Math.round((Date.now() - startTime) / 1000);
         
-        const rootCauseReport = {
-            profileCompleteness: appSession.stateData?.validationReport || null,
-            resolutionReport: connector.resolutionReport || null,
-            finalAction: pendingFields.length > 0 ? 'Paused for manual input' : 'Submitted'
-        };
+        const cachedReport = appSession.stateData?.diagnosticsReport || null;
+        const diagnosticsReport = AutomationDiagnosticsReport.generate({
+            sessionId,
+            connectorName,
+            automationContext,
+            classificationReport: connector.formIntelligence?.classificationReport || cachedReport?.domIntelligenceReport || null,
+            profileValidationReport: appSession.stateData?.validationReport || null,
+            completedFields: completedFields.length > 0 ? completedFields : (cachedReport?.executionStats?.completedFields || []),
+            pendingFields: pendingFields,
+            uploadResults: connector.uploadResults?.length > 0 ? connector.uploadResults : (cachedReport?.uploadVerificationResults || []),
+            executionTimeSeconds: executionTimeSec
+        });
 
-        const applicationReport = {
-            totalFieldsDetected: totalFields,
-            fieldsFilled: completedFields.length,
-            fieldsSkipped: pendingFields.length,
-            completionPercentage,
-            skippedReasons: pendingFields.map(p => ({ label: p.label, reason: p.reason })),
-            executionTimeSeconds: executionTimeSec,
-            aiGeneratedAnswers: completedFields.filter(f => f.startsWith('AI_')).length,
-            uploadsCompleted: completedFields.filter(f => f.includes('UPLOAD')).length,
-            rootCauseReport
-        };
+        // Cache diagnostics report & execution state in DB
+        const ApplicationSession = require('../../models/ApplicationSession');
+        await ApplicationSession.findByIdAndUpdate(sessionId, {
+          $set: {
+            'stateData.diagnosticsReport': diagnosticsReport,
+            'stateData.completedFields': completedFields,
+            'stateData.pendingFields': pendingFields,
+            'stateData.uploadResults': connector.uploadResults
+          }
+        });
 
         if (pendingFields.length > 0) {
             await runStep('WaitingForUser', async () => {
-               await stateMachine.updateState('WaitingForUser', { applicationReport });
-               await eventLogger.info('JobPaused', `Application requires manual input for ${pendingFields.length} fields`, applicationReport);
+               await eventLogger.info('JobPaused', `Application requires manual input for ${pendingFields.length} fields`, diagnosticsReport);
             });
             
             return {
-                status: 'WaitingForUser',
+                status: 'PAUSED',
+                result: 'WaitingForUser',
                 completedFields,
                 pendingFields,
                 filledCount: completedFields.length,
                 pendingCount: pendingFields.length,
                 completionPercentage,
-                report: applicationReport
+                report: diagnosticsReport
             };
         }
 
@@ -275,56 +302,59 @@ async function bootstrap() {
         
         await runStep('Completed', async () => {
              await connector.captureEvidence('Screenshot', 'Completed');
-             await stateMachine.updateState('Completed', { applicationReport });
         });
 
         await telemetry.finalize(true);
-        await eventLogger.info('JobCompleted', 'Application submitted successfully', applicationReport);
+        await eventLogger.info('JobCompleted', 'Application submitted successfully', diagnosticsReport);
 
         return { 
-            status: 'Completed',
+            status: 'SUBMITTED',
+            result: 'Completed',
             completedFields,
             pendingFields: [],
             filledCount: completedFields.length,
             pendingCount: 0,
             completionPercentage: 100,
-            report: applicationReport
+            report: diagnosticsReport
         };
 
       } catch (error) {
-        logger.error(`Application Job Failed: ${error.message}`);
+        logger.error(`Application Job Error: ${error.message}`);
         await eventLogger.error('JobFailed', error.message, { stack: error.stack });
         
+        const currentState = appSession?.status || 'Created';
+        const nonRetryableStates = ['WaitingForUser', 'ReadyForSubmission', 'Completed', 'CompletedWithWarnings', 'Cancelled'];
+        
+        if (nonRetryableStates.includes(currentState)) {
+          logger.warn(`Job in non-retryable state [${currentState}]. Suppressing retries.`);
+          return { status: 'PAUSED', result: currentState, error: error.message };
+        }
+
         if (error.name === 'ValidationError') {
-          // Do not retry validation errors
           logger.warn(`ValidationError caught. Bypassing retries. Error: ${error.message}`);
           try {
              await stateMachine.updateState('Cancelled', null, error);
           } catch (e) {}
           await telemetry.finalize(false);
-          return { success: false, error: error.message };
+          return { status: 'CANCELLED', result: 'Cancelled', error: error.message };
         }
 
         const canRetry = await stateMachine.incrementRetry();
         telemetry.recordRetry();
 
         if (canRetry) {
-          // It's a transient error. Do NOT transition to Failed. 
-          // We leave the state where it crashed so it can resume.
           logger.warn(`Transient error caught. Will retry from state ${stateMachine.session.status}. Error: ${error.message}`);
           throw error; // Let BullMQ retry
         } else {
           try {
-             // Only attempt to set Failed if not already failed
              await stateMachine.updateState('Failed', null, error);
           } catch (e) {
              logger.warn(`Could not set status to Failed: ${e.message}`);
           }
           await telemetry.finalize(false);
-          // Do not throw, since we exhausted retries.
         }
         
-        return { success: false, error: error.message };
+        return { status: 'FAILED', result: 'Failed', error: error.message };
 
       } finally {
         // Cleanup
@@ -351,14 +381,15 @@ async function bootstrap() {
         
         if (browser) {
             if (!keepBrowserOpen) {
+                ActiveSessionRegistry.unregister(sessionId);
                 BrowserPool.release(browser, sessionId);
             } else {
-                logger.info('Not releasing browser to pool; waiting for manual user intervention. Setting 15 min timeout.');
-                // Add a 15-minute timeout to reclaim the browser if the user abandons it
+                logger.info('Not releasing browser to pool; keeping session registered in ActiveSessionRegistry for user intervention.');
                 setTimeout(async () => {
                    try {
                        logger.warn(`15-minute intervention timeout reached for session ${sessionId}. Reclaiming browser.`);
                        if (context) await context.close().catch(() => {});
+                       ActiveSessionRegistry.unregister(sessionId);
                        BrowserPool.release(browser, sessionId);
                    } catch (e) {}
                 }, 15 * 60 * 1000);

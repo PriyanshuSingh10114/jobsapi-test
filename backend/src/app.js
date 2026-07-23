@@ -41,6 +41,8 @@ const adminRoutes = require('./routes/admin.routes');
 const analyticsRoutes = require('./routes/analyticsRoutes');
 const automationRoutes = require('./routes/automationRoutes');
 const userRoutes = require('./routes/userRoutes');
+const discoveryRoutes = require('./routes/discoveryRoutes');
+const autoApplyRoutes = require('./routes/autoApplyRoutes');
 
 // Serve uploads folder statically if needed
 app.use('/uploads', express.static('uploads'));
@@ -54,6 +56,8 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/automation', automationRoutes);
 app.use('/api/user', userRoutes);
+app.use('/api/discovery', discoveryRoutes);
+app.use('/api/auto-apply', autoApplyRoutes);
 
 // Swagger UI
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));

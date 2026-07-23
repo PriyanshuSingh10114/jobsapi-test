@@ -1,4 +1,5 @@
 const BrowserManager = require('./BrowserManager');
+const ActiveSessionRegistry = require('./ActiveSessionRegistry');
 const logger = require('../../config/logger');
 
 class BrowserPool {
@@ -33,6 +34,13 @@ class BrowserPool {
   }
 
   async acquire(sessionId = 'default') {
+    // If ActiveSessionRegistry holds a live active session for this sessionId, reuse browser
+    if (ActiveSessionRegistry.has(sessionId)) {
+      const activeSession = ActiveSessionRegistry.get(sessionId);
+      logger.info(`[BrowserPool] Reusing existing active browser instance for session: ${sessionId}`);
+      return activeSession.browser;
+    }
+
     if (this.activeAcquisitions.has(sessionId)) {
       const err = new Error(`[BrowserPool Violation] Multiple BrowserPool.acquire() attempted for session: ${sessionId}. Exactly one browser acquisition is permitted per automation job.`);
       logger.error(err.message);

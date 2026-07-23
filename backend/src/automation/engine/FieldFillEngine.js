@@ -17,48 +17,71 @@ class FieldFillEngine {
             switch (field.controlType) {
                 case 'text':
                 case 'textarea':
-                    await locator.fill(value);
+                    await locator.fill(String(value));
                     break;
 
+                case 'select':
                 case 'dropdown':
                 case 'combobox':
-                case 'select':
-                    const options = await locator.locator('option').allInnerTexts().catch(() => []);
-                    const match = DropdownNormalizer.findBestMatch(options, value);
-                    if (match) {
-                        await locator.selectOption({ label: match });
-                    } else {
-                        // Fallback: Some comboboxes are just text inputs (like custom React selects)
-                        // If there are no options, try filling it as text.
-                        if (options.length === 0) {
-                             await locator.fill(value);
+                    const tagName = await locator.evaluate(el => el.tagName.toLowerCase()).catch(() => 'input');
+                    const role = await locator.getAttribute('role').catch(() => '');
+
+                    if (tagName === 'select') {
+                        const options = await locator.locator('option').allInnerTexts().catch(() => []);
+                        const match = DropdownNormalizer.findBestMatch(options, String(value));
+                        if (match) {
+                            await locator.selectOption({ label: match });
                         } else {
-                             throw new Error(`Dropdown Option Missing: No match for '${value}'`);
+                            throw new Error(`Select Option Missing: No match for '${value}' in options [${options.join(', ')}]`);
+                        }
+                    } else if (role === 'combobox' || tagName !== 'select') {
+                        // Custom React / Select2 / ARIA Combobox Strategy
+                        const options = await locator.locator('option').allInnerTexts().catch(() => []);
+                        if (options.length > 0) {
+                            const match = DropdownNormalizer.findBestMatch(options, String(value));
+                            if (match) await locator.selectOption({ label: match });
+                        } else {
+                            // Click to open custom dropdown overlay
+                            await locator.click().catch(() => {});
+                            await this.page.waitForTimeout(300);
+
+                            // Look for matching dropdown option in DOM overlay
+                            const optionMatch = this.page.locator('[role="option"], .select__option, .chosen-results li, li.option, div[class*="option"]').filter({ hasText: new RegExp(String(value), 'i') }).first();
+                            
+                            if (await optionMatch.count() > 0) {
+                                await optionMatch.click();
+                            } else {
+                                // Fallback: Fill or type as text input if typing filter works
+                                await locator.fill(String(value)).catch(async () => {
+                                    await locator.type(String(value));
+                                });
+                            }
                         }
                     }
                     break;
 
                 case 'checkbox':
-                    if (value && value.toString().toLowerCase() !== 'false') {
-                        await locator.check();
-                    } else {
-                        await locator.uncheck();
+                    const shouldCheck = value && String(value).toLowerCase() !== 'false' && value !== 0;
+                    const isChecked = await locator.isChecked().catch(() => false);
+                    if (shouldCheck && !isChecked) {
+                        await locator.check().catch(() => locator.click());
+                    } else if (!shouldCheck && isChecked) {
+                        await locator.uncheck().catch(() => locator.click());
                     }
                     break;
 
                 case 'radio':
-                    // Radio buttons usually share the same name, we need to find the one with the correct value
-                    // This locator should already point to the correct radio button based on FormIntelligence
-                    await locator.check();
+                    // Radio button strategy: click/check target element
+                    await locator.click().catch(() => locator.check());
                     break;
 
                 case 'file':
-                    // handled by UploadManager usually, but fallback here
+                    // File upload strategy: setInputFiles
                     await locator.setInputFiles(value);
                     break;
 
                 default:
-                    await locator.fill(value);
+                    await locator.fill(String(value));
                     break;
             }
         } catch (err) {

@@ -20,6 +20,16 @@ class CandidateProfileResolver {
 
     const raw = profile.toObject();
 
+    logger.info('CandidateProfileResolver: Raw Mongo Document:', {
+      id: raw._id ? raw._id.toString() : userId,
+      rawKeys: Object.keys(raw),
+      hasBasicInfo: !!raw.basicInfo,
+      hasLocation: !!raw.location,
+      educationCount: raw.education?.length || 0,
+      experienceCount: raw.experience?.length || 0,
+      assetsCount: raw.assets?.length || 0
+    });
+
     // PHASE 2: NORMALIZATION
     const normalized = {
       personal: {
@@ -92,6 +102,23 @@ class CandidateProfileResolver {
       }
     };
 
+    // Trace missing profile paths
+    const checkPath = (objPath, value) => {
+      if (!value || (Array.isArray(value) && value.length === 0)) {
+        logger.warn(`CandidateProfileResolver: Missing profile attribute path: '${objPath}'`);
+      }
+    };
+
+    checkPath('personal.firstName', normalized.personal.firstName);
+    checkPath('personal.lastName', normalized.personal.lastName);
+    checkPath('contact.email', normalized.contact.email);
+    checkPath('contact.phone', normalized.contact.phone);
+    checkPath('location.city', normalized.location.city);
+    checkPath('location.country', normalized.location.country);
+    checkPath('links.linkedin', normalized.links.linkedin);
+    checkPath('education', normalized.education);
+    checkPath('experience', normalized.experience);
+
     // PHASE 3 & 8: DOCUMENT RESOLUTION & VERIFICATION
     logger.info('CandidateProfileResolver: Resolving and verifying documents...');
     const assets = raw.assets || [];
@@ -115,7 +142,6 @@ class CandidateProfileResolver {
         }
       } catch (err) {
         logger.error(`Document Verification Failed: File not found on disk at ${asset.filePath}. Removing from automation cache.`);
-        // File does not exist physically, so we do not add it to normalized.documents
       }
     }
     
@@ -139,9 +165,20 @@ class CandidateProfileResolver {
     if (normalized.documents.resumes.length > 0) {
       normalized.documents.resumes.sort((a, b) => b.atsScore - a.atsScore);
       normalized.documents.defaultResume = normalized.documents.resumes[0].storagePath;
+    } else {
+      checkPath('documents.defaultResume', null);
     }
 
-    logger.info('CandidateProfileResolver: Normalization complete.');
+    logger.info('CandidateProfileResolver: Normalization complete.', {
+      firstName: normalized.personal.firstName,
+      lastName: normalized.personal.lastName,
+      email: normalized.contact.email,
+      phone: normalized.contact.phone,
+      educationCount: normalized.education.length,
+      experienceCount: normalized.experience.length,
+      defaultResume: normalized.documents.defaultResume
+    });
+
     return normalized;
   }
 

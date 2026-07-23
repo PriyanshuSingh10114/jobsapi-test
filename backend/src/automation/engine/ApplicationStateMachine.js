@@ -17,6 +17,20 @@ class ApplicationStateMachine {
 
   async updateState(newState, data = null, error = null) {
     if (!this.session) await this.load();
+
+    // Idempotent guard: if already in target state, update payload and return
+    if (this.session.status === newState) {
+      logger.info(`[StateMachine] Session ${this.sessionId} already in state [${newState}]. Updating stateData payload.`);
+      if (data) {
+        this.session.stateData = { ...this.session.stateData, ...data };
+      }
+      if (error) {
+        this.session.error = error.message || String(error);
+      }
+      this.session.lastUpdatedAt = new Date();
+      await this.session.save();
+      return;
+    }
     
     if (!this.canTransitionTo(newState)) {
       const allowed = this.getAllowedTransitions(this.session.status);
@@ -36,7 +50,7 @@ class ApplicationStateMachine {
       this.session.error = error.message || String(error);
     }
 
-    if (['Completed', 'Failed', 'Cancelled'].includes(newState)) {
+    if (['Completed', 'CompletedWithWarnings', 'Failed', 'Cancelled'].includes(newState)) {
       this.session.completedAt = new Date();
     }
 

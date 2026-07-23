@@ -1,8 +1,16 @@
 const express = require('express');
-const { getSources } = require('../controllers/analyticsController');
-
 const router = express.Router();
+const ApplicationAnalyticsService = require('../automation/telemetry/ApplicationAnalyticsService');
 
-router.get('/sources', getSources);
+// Get SaaS telemetry dashboard analytics
+router.get('/dashboard', async (req, res) => {
+  try {
+    const { userId } = req.query;
+    const analytics = await ApplicationAnalyticsService.getAnalytics(userId || null);
+    res.json({ success: true, analytics });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 module.exports = router;
