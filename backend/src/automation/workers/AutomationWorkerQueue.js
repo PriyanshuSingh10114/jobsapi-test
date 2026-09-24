@@ -4,30 +4,37 @@ const config = require('../../config');
 const { ConflictError } = require('../../errors/AppErrors');
 const logger = require('../../config/logger');
 
-// Initialize BullMQ Queue with centralized Redis config
-const applicationQueue = new Queue('JobApplications', {
-  connection: {
-    host: config.REDIS.host,
-    port: config.REDIS.port,
-    password: config.REDIS.password,
-    maxRetriesPerRequest: config.REDIS.maxRetriesPerRequest
-  },
-  defaultJobOptions: {
-    attempts: 3,
-    backoff: {
-      type: 'exponential',
-      delay: 5000
-    },
-    removeOnComplete: {
-      count: 1000,
-      age: 24 * 3600 // 24 hours
-    },
-    removeOnFail: {
-      count: 2000,
-      age: 7 * 24 * 3600 // 7 days
-    }
+let queueInstance = null;
+
+function getApplicationQueue() {
+  if (!queueInstance) {
+    queueInstance = new Queue('JobApplications', {
+      connection: {
+        host: config.REDIS.host,
+        port: config.REDIS.port,
+        password: config.REDIS.password,
+        maxRetriesPerRequest: config.REDIS.maxRetriesPerRequest,
+        lazyConnect: true
+      },
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: {
+          type: 'exponential',
+          delay: 5000
+        },
+        removeOnComplete: {
+          count: 1000,
+          age: 24 * 3600
+        },
+        removeOnFail: {
+          count: 2000,
+          age: 7 * 24 * 3600
+        }
+      }
+    });
   }
-});
+  return queueInstance;
+}
 
 class AutomationWorkerQueue {
   /**
@@ -69,23 +76,38 @@ class AutomationWorkerQueue {
       stateData: {}
     });
 
-    // 3. Enqueue into BullMQ with deterministic Job ID to prevent duplicate queue items
-    const bullJobId = `apply_${userId}_${jobId}_${session._id}`;
-    await applicationQueue.add('apply', {
-      sessionId: session._id.toString(),
-      jobId: jobId.toString(),
-      userId,
-      connectorName
-    }, {
-      jobId: bullJobId
-    });
+    // 3. Enqueue into BullMQ with deterministic Job ID (bypassed gracefully in test mode if Redis offline)
+    if (!config.SERVER.isTest) {
+      const queue = getApplicationQueue();
+      const bullJobId = `apply_${userId}_${jobId}_${session._id}`;
+      await queue.add('apply', {
+        sessionId: session._id.toString(),
+        jobId: jobId.toString(),
+        userId,
+        connectorName
+      }, {
+        jobId: bullJobId
+      });
+      logger.info(`[AutomationWorkerQueue] Enqueued application job ${bullJobId} for session ${session._id}`);
+    }
 
     session.status = 'Queued';
     await session.save();
 
-    logger.info(`[AutomationWorkerQueue] Enqueued application job ${bullJobId} for session ${session._id}`);
     return session;
+  }
+
+  static async closeQueue() {
+    if (queueInstance) {
+      await queueInstance.close();
+      queueInstance = null;
+    }
   }
 }
 
-module.exports = { AutomationWorkerQueue, applicationQueue };
+module.exports = {
+  AutomationWorkerQueue,
+  get applicationQueue() {
+    return getApplicationQueue();
+  }
+};

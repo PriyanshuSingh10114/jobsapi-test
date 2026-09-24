@@ -1,44 +1,44 @@
 const Job = require('../models/Job');
 const Source = require('../models/Source');
 const SyncMetric = require('../models/SyncMetric');
+const { parsePagination } = require('../utils/sanitizer');
 
-exports.getHealth = async (req, res) => {
+exports.getHealth = async (req, res, next) => {
   try {
     const totalJobs = await Job.countDocuments({ is_active: true });
-    const dbStatus = 'Healthy'; // Assuming mongoose is connected if count works
     res.json({
       success: true,
       data: {
-        status: dbStatus,
+        status: 'Healthy',
         totalActiveJobs: totalJobs,
         timestamp: new Date()
       }
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    next(error);
   }
 };
 
-exports.getConnectors = async (req, res) => {
+exports.getConnectors = async (req, res, next) => {
   try {
-    const connectors = await Source.find().sort({ name: 1 });
+    const connectors = await Source.find().sort({ name: 1 }).lean();
     res.json({ success: true, data: connectors });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    next(error);
   }
 };
 
-exports.getSyncHistory = async (req, res) => {
+exports.getSyncHistory = async (req, res, next) => {
   try {
-    const limit = parseInt(req.query.limit) || 50;
-    const history = await SyncMetric.find().sort({ createdAt: -1 }).limit(limit);
-    res.json({ success: true, data: history });
+    const { limit, skip } = parsePagination(req.query, 50, 200);
+    const history = await SyncMetric.find().sort({ createdAt: -1 }).skip(skip).limit(limit).lean();
+    res.json({ success: true, count: history.length, data: history });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    next(error);
   }
 };
 
-exports.getMetrics = async (req, res) => {
+exports.getMetrics = async (req, res, next) => {
   try {
     const pipeline = [
       {
@@ -54,24 +54,24 @@ exports.getMetrics = async (req, res) => {
     const metrics = await SyncMetric.aggregate(pipeline);
     res.json({ success: true, data: metrics });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    next(error);
   }
 };
 
-exports.getFailures = async (req, res) => {
+exports.getFailures = async (req, res, next) => {
   try {
-    const failedConnectors = await Source.find({ status: 'Failed' });
+    const failedConnectors = await Source.find({ status: 'Failed' }).lean();
     res.json({ success: true, data: failedConnectors });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    next(error);
   }
 };
 
-exports.getSkipped = async (req, res) => {
+exports.getSkipped = async (req, res, next) => {
   try {
-    const skippedData = await Source.find({}, 'name jobs_skipped').sort({ jobs_skipped: -1 });
+    const skippedData = await Source.find({}, 'name jobs_skipped').sort({ jobs_skipped: -1 }).lean();
     res.json({ success: true, data: skippedData });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    next(error);
   }
 };

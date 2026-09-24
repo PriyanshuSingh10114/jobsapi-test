@@ -17,15 +17,24 @@ test.before(async () => {
 
 test.after(async () => {
   if (server) {
+    if (typeof server.closeAllConnections === 'function') {
+      server.closeAllConnections();
+    }
     await new Promise((resolve) => server.close(resolve));
   }
-  // Allow pending Winston file buffers to flush
-  setTimeout(() => process.exit(0), 100).unref();
 });
 
 function makeRequest(path) {
   return new Promise((resolve, reject) => {
-    http.get(`http://127.0.0.1:${port}${path}`, (res) => {
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port,
+      path,
+      method: 'GET',
+      headers: {
+        'Connection': 'close'
+      }
+    }, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => {
@@ -43,7 +52,9 @@ function makeRequest(path) {
           });
         }
       });
-    }).on('error', reject);
+    });
+    req.on('error', reject);
+    req.end();
   });
 }
 

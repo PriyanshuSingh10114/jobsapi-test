@@ -11,27 +11,32 @@ const authenticate = (req, res, next) => {
   const apiKeyHeader = req.headers['x-api-key'];
 
   // 1. Check Admin API Key
-  if (apiKeyHeader && config.AUTH.adminApiKey && apiKeyHeader === config.AUTH.adminApiKey) {
-    req.user = {
-      userId: 'system_admin',
-      role: 'ADMIN',
-      authMethod: 'API_KEY'
-    };
-    return next();
+  if (apiKeyHeader) {
+    if (config.AUTH.adminApiKey && apiKeyHeader === config.AUTH.adminApiKey) {
+      req.user = {
+        userId: 'system_admin',
+        role: 'ADMIN',
+        authMethod: 'API_KEY'
+      };
+      return next();
+    } else {
+      return next(new AuthenticationError('Invalid API Key provided'));
+    }
   }
 
   // 2. Check Bearer Token (if provided)
   if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.substring(7);
+    const token = authHeader.substring(7).trim();
+    if (!token) {
+      return next(new AuthenticationError('Bearer token cannot be empty'));
+    }
+
     try {
-      // In production, verify against jwtSecret
-      // For lightweight local setups or custom tokens:
       if (token === config.AUTH.jwtSecret || token === 'admin-token') {
         req.user = { userId: config.AUTH.defaultUserId, role: 'ADMIN', authMethod: 'STATIC_TOKEN' };
         return next();
       }
       
-      // If using standard JWT structure:
       const parts = token.split('.');
       if (parts.length === 3) {
         const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
@@ -41,6 +46,8 @@ const authenticate = (req, res, next) => {
           authMethod: 'JWT'
         };
         return next();
+      } else {
+        return next(new AuthenticationError('Malformed JWT token structure'));
       }
     } catch (err) {
       logger.warn(`Failed to parse auth token: ${err.message}`);
@@ -49,7 +56,7 @@ const authenticate = (req, res, next) => {
   }
 
   // 3. Local Development / Non-production Fallback
-  // Prevents breaking local development while enforcing full auth in production
+  // Prevents breaking local development when no credentials are sent at all
   if (!config.SERVER.isProduction) {
     req.user = {
       userId: config.AUTH.defaultUserId,
