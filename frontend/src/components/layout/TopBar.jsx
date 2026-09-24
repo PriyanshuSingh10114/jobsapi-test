@@ -1,9 +1,19 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Menu, Search, Bell, Sparkles } from 'lucide-react';
+import { Menu, Search, Bell, Sparkles, RefreshCw } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { ThemeToggle } from '../ui/ThemeToggle';
 
 export const TopBar = ({ onOpenMobileMenu, onOpenCommandPalette }) => {
+  const queryClient = useQueryClient();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefreshAll = async () => {
+    setIsRefreshing(true);
+    await queryClient.invalidateQueries();
+    setTimeout(() => setIsRefreshing(false), 600);
+  };
+
   return (
     <header className="h-16 bg-surface/80 backdrop-blur-md border-b border-border-warm sticky top-0 z-30 px-4 sm:px-6 flex items-center justify-between gap-4">
       {/* Mobile Menu trigger & quick title */}
@@ -53,7 +63,20 @@ export const TopBar = ({ onOpenMobileMenu, onOpenCommandPalette }) => {
           <Search className="w-4 h-4" />
         </button>
 
+        {/* Global Refresh Button */}
+        <button
+          type="button"
+          onClick={handleRefreshAll}
+          disabled={isRefreshing}
+          className="p-2 rounded-lg text-charcoal-muted hover:text-charcoal hover:bg-surface-soft border border-border-warm/60 transition-all cursor-pointer"
+          title="Refresh workspace feeds & data"
+          aria-label="Refresh workspace"
+        >
+          <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-brand-primary' : ''}`} />
+        </button>
+
         <ThemeToggle />
+
 
         {/* Quick AutoApply CTA */}
         <NavLink

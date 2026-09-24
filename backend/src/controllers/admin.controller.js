@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Job = require('../models/Job');
 const Source = require('../models/Source');
 const SyncMetric = require('../models/SyncMetric');
@@ -5,11 +6,15 @@ const { parsePagination } = require('../utils/sanitizer');
 
 exports.getHealth = async (req, res, next) => {
   try {
-    const totalJobs = await Job.countDocuments({ is_active: true });
+    let totalJobs = 0;
+    const isDbConnected = mongoose.connection.readyState === 1;
+    if (isDbConnected) {
+      totalJobs = await Job.countDocuments({ is_active: true });
+    }
     res.json({
       success: true,
       data: {
-        status: 'Healthy',
+        status: isDbConnected ? 'Healthy' : 'Connecting',
         totalActiveJobs: totalJobs,
         timestamp: new Date()
       }
@@ -18,6 +23,7 @@ exports.getHealth = async (req, res, next) => {
     next(error);
   }
 };
+
 
 exports.getConnectors = async (req, res, next) => {
   try {

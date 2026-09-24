@@ -8,8 +8,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Sparkles,
-  Inbox
+  Inbox,
+  RefreshCw
 } from 'lucide-react';
+
 import { fetchJobs, searchJobs, fetchProfile } from '../services/api';
 import { SearchInput } from '../components/ui/SearchInput';
 import { JobCard } from '../components/jobs/JobCard';
@@ -138,6 +140,17 @@ export const DiscoverPage = () => {
               Filters
             </button>
 
+            {/* Refresh button */}
+            <button
+              type="button"
+              onClick={() => refetch()}
+              className="px-3 py-1.5 rounded-xl bg-surface border border-border-warm text-xs font-semibold text-charcoal hover:bg-surface-soft flex items-center gap-1.5 transition-all cursor-pointer"
+              title="Refresh job search results"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-brand-primary ${isLoading ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </button>
+
             <div className="flex items-center gap-2 bg-surface border border-border-warm rounded-xl px-3 py-1.5 text-xs text-charcoal">
               <ArrowUpDown className="w-3.5 h-3.5 text-charcoal-muted" />
               <select
@@ -151,6 +164,7 @@ export const DiscoverPage = () => {
                 <option value="Oldest First">Oldest First</option>
               </select>
             </div>
+
           </div>
         </div>
 

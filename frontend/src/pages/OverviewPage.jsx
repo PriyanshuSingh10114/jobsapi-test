@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Compass,
   ArrowRight,
@@ -11,7 +11,8 @@ import {
   ShieldCheck,
   Send,
   Building2,
-  FileText
+  FileText,
+  RefreshCw
 } from 'lucide-react';
 import { fetchJobs, fetchStats, fetchProfile, fetchATSReadiness, fetchProfileHistory } from '../services/api';
 import { SearchInput } from '../components/ui/SearchInput';
@@ -23,7 +24,20 @@ import { extractSkillList } from '../utils/skills';
 
 export const OverviewPage = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefreshOverview = async () => {
+    setIsRefreshing(true);
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['overviewJobs'] }),
+      queryClient.invalidateQueries({ queryKey: ['stats'] }),
+      queryClient.invalidateQueries({ queryKey: ['atsReadiness'] }),
+    ]);
+    setTimeout(() => setIsRefreshing(false), 600);
+  };
+
 
   // Fetch Stats
   const { data: stats } = useQuery({
@@ -197,16 +211,30 @@ export const OverviewPage = () => {
                 Curated for your skills & telemetry profile
               </p>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate('/discover')}
-              icon={ArrowRight}
-              iconPosition="right"
-            >
-              View all
-            </Button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleRefreshOverview}
+                disabled={isRefreshing}
+                className="px-3 py-1.5 rounded-lg bg-surface border border-border-warm text-xs font-semibold text-charcoal hover:bg-surface-soft flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                title="Refresh recommended feed"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-brand-primary ${isRefreshing || isJobsLoading ? 'animate-spin' : ''}`} />
+                <span>Refresh Feed</span>
+              </button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate('/discover')}
+                icon={ArrowRight}
+                iconPosition="right"
+              >
+                View all
+              </Button>
+            </div>
           </div>
+
 
           {isJobsLoading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

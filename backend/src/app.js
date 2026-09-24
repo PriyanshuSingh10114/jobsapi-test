@@ -34,11 +34,24 @@ app.use(cors({
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
-// 4. Request Logging with Correlation ID
+// 4. Request Logging with Correlation ID and Duration
 app.use((req, res, next) => {
-  logger.info(`[${req.id}] ${req.method} ${req.url}`);
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    const status = res.statusCode;
+    const isError = status >= 400;
+    const methodPad = req.method.padEnd(6, ' ');
+    const logMsg = `[${req.id.slice(0, 8)}] ${methodPad} ${req.originalUrl || req.url} ${status} (${duration}ms)`;
+    if (isError) {
+      logger.warn(logMsg);
+    } else {
+      logger.info(logMsg);
+    }
+  });
   next();
 });
+
 
 // 5. Health, Readiness & Metrics (Unthrottled)
 const healthRoutes = require('./routes/healthRoutes');
