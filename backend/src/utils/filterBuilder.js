@@ -1,8 +1,10 @@
 const { getRoleRegexPattern } = require('./roleNormalizer');
+const { escapeRegex } = require('./sanitizer');
+const config = require('../config');
 
 /**
- * Builds a standardized MongoDB filter object for jobs.
- * This guarantees that /api/stats and /api/jobs/search always return consistent counts.
+ * Builds a standardized, sanitized MongoDB filter object for jobs.
+ * Prevents ReDoS attacks and ensures consistent querying across stats and search endpoints.
  * @param {Object} queryParams - The req.query object.
  * @returns {Object} MongoDB query filter object.
  */
@@ -17,37 +19,39 @@ const buildJobFilter = (queryParams = {}) => {
     if (jobRegion === 'US Jobs') {
       andConditions.push({ jobRegion: { $in: ['US Onsite', 'US Hybrid', 'US Remote'] } });
     } else {
-      andConditions.push({ jobRegion });
+      andConditions.push({ jobRegion: String(jobRegion) });
     }
   }
 
-  // 2. Search for Role and Skills (Regex instead of $text)
+  // 2. Search for Role and Skills
   if (role || skills) {
     const searchConditions = [];
     if (role) {
-      const pattern = getRoleRegexPattern(role);
+      const pattern = getRoleRegexPattern(String(role));
       searchConditions.push(
         { title: { $regex: pattern, $options: 'i' } },
         { description: { $regex: pattern, $options: 'i' } }
       );
     }
     if (skills) {
-      // Just basic regex for skills if no role
-      searchConditions.push({ description: { $regex: skills, $options: 'i' } });
-      searchConditions.push({ skills: { $regex: skills, $options: 'i' } });
+      const escapedSkills = escapeRegex(String(skills).trim());
+      searchConditions.push({ description: { $regex: escapedSkills, $options: 'i' } });
+      searchConditions.push({ skills: { $regex: escapedSkills, $options: 'i' } });
     }
     andConditions.push({ $or: searchConditions });
   }
 
-  // 3. String Filters
+  // 3. Sanitized String Filters
   if (company) {
-    andConditions.push({ company: { $regex: new RegExp(company, 'i') } });
+    const escapedCompany = escapeRegex(String(company).trim());
+    andConditions.push({ company: { $regex: new RegExp(escapedCompany, 'i') } });
   }
   if (location) {
-    andConditions.push({ location: { $regex: new RegExp(location, 'i') } });
+    const escapedLocation = escapeRegex(String(location).trim());
+    andConditions.push({ location: { $regex: new RegExp(escapedLocation, 'i') } });
   }
   if (jobType) {
-    const parsedJobType = jobType.replace(/-/g, ' ');
+    const parsedJobType = escapeRegex(String(jobType).replace(/-/g, ' ').trim());
     andConditions.push({
       $or: [
         { jobType: { $regex: new RegExp(parsedJobType, 'i') } },
@@ -56,31 +60,38 @@ const buildJobFilter = (queryParams = {}) => {
     });
   }
   if (experienceLevel) {
-    andConditions.push({ experienceLevel: { $regex: new RegExp(experienceLevel, 'i') } });
+    const escapedLevel = escapeRegex(String(experienceLevel).trim());
+    andConditions.push({ experienceLevel: { $regex: new RegExp(escapedLevel, 'i') } });
   }
 
   // 4. Exact Matches
-  if (remote === 'true') {
+  if (remote === 'true' || remote === true) {
     andConditions.push({ remote: true });
   }
   if (source) {
-    andConditions.push({ source: { $regex: new RegExp(`^${source}$`, 'i') } });
+    const escapedSource = escapeRegex(String(source).trim());
+    andConditions.push({ source: { $regex: new RegExp(`^${escapedSource}$`, 'i') } });
   }
 
-  // 5. Global 30-Day Expiration Filter
+  // 5. Global Retention / Expiration Cutoff Filter
+  const retentionDays = config.retentionDays || 30;
   const date = new Date();
   if (datePosted === 'Past 24 hours') {
     date.setDate(date.getDate() - 1);
   } else if (datePosted === 'Past Week') {
     date.setDate(date.getDate() - 7);
   } else {
-    // Default strict 30-day cutoff for everything else (including "Past Month" or empty)
-    date.setDate(date.getDate() - 30);
+    date.setDate(date.getDate() - retentionDays);
   }
   andConditions.push({ postedAt: { $gte: date } });
 
-  // 6. Global US-First Business Rule (Strictly US-Only)
-  andConditions.push({ isUSJob: true });
+  // 6. Global US-First Business Rule (Strictly US-Only when enabled)
+  if (config.strictUSMode !== false) {
+    andConditions.push({ isUSJob: true });
+  }
+
+  // 7. Only active jobs
+  andConditions.push({ is_active: true });
 
   if (andConditions.length > 0) {
     query.$and = andConditions;

@@ -3,45 +3,51 @@ const router = express.Router();
 const { AutomationWorkerQueue } = require('../automation/workers/AutomationWorkerQueue');
 const ApplicationSession = require('../models/ApplicationSession');
 const AutomationLog = require('../models/AutomationLog');
+const { authenticate } = require('../middleware/auth');
+const { validate, validateObjectId, schemas } = require('../middleware/validator');
+const { automationRateLimiter } = require('../middleware/rateLimiter');
+const { NotFoundError } = require('../errors/AppErrors');
 
-// POST /automation/start
-router.post('/start', async (req, res, next) => {
+// POST /api/automation/start
+router.post('/start', authenticate, automationRateLimiter, validate(schemas.automationStart), async (req, res, next) => {
   try {
-    const { jobId, userId, connectorName } = req.body;
-    
-    if (!jobId || !connectorName || !userId) {
-      return res.status(400).json({ success: false, message: 'Missing required fields' });
-    }
+    const { jobId, connectorName } = req.body;
+    const userId = req.user?.userId || req.body.userId;
 
-    // We no longer fetch or cache the profile here.
-    // The CandidateProfileResolver will fetch a fresh, normalized profile inside the worker.
     const session = await AutomationWorkerQueue.enqueueJob(jobId, userId, connectorName);
     
     res.status(202).json({
       success: true,
       message: 'Application job enqueued successfully',
-      sessionId: session._id
+      sessionId: session._id,
+      status: session.status
     });
   } catch (error) {
     next(error);
   }
 });
 
-// GET /automation/status/:id
-router.get('/status/:id', async (req, res, next) => {
+// GET /api/automation/status/:id
+router.get('/status/:id', authenticate, validateObjectId('id'), async (req, res, next) => {
   try {
     const session = await ApplicationSession.findById(req.params.id);
     if (!session) {
-      return res.status(404).json({ success: false, message: 'Session not found' });
+      throw new NotFoundError(`Session not found with ID: ${req.params.id}`);
     }
-    res.json({ success: true, status: session.status, error: session.error, retryCount: session.retryCount });
+    res.json({
+      success: true,
+      status: session.status,
+      error: session.error,
+      retryCount: session.retryCount,
+      lastUpdatedAt: session.lastUpdatedAt
+    });
   } catch (error) {
     next(error);
   }
 });
 
-// GET /automation/logs/:id
-router.get('/logs/:id', async (req, res, next) => {
+// GET /api/automation/logs/:id
+router.get('/logs/:id', authenticate, validateObjectId('id'), async (req, res, next) => {
   try {
     const logs = await AutomationLog.find({ applicationSessionId: req.params.id }).sort({ timestamp: 1 });
     res.json({ success: true, count: logs.length, logs });
@@ -50,13 +56,13 @@ router.get('/logs/:id', async (req, res, next) => {
   }
 });
 
-// GET /automation/context/:sessionId
-router.get('/context/:sessionId', async (req, res, next) => {
+// GET /api/automation/context/:sessionId
+router.get('/context/:sessionId', authenticate, async (req, res, next) => {
   try {
     const ApplicationContext = require('../models/ApplicationContext');
     const appContext = await ApplicationContext.findOne({ sessionId: req.params.sessionId });
     if (!appContext) {
-      return res.status(404).json({ success: false, message: 'Application context not found' });
+      throw new NotFoundError(`Application context not found for session: ${req.params.sessionId}`);
     }
     res.json({ success: true, context: appContext });
   } catch (error) {

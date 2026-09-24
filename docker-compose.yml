@@ -1,0 +1,99 @@
+version: '3.8'
+
+services:
+  # 1. MongoDB Database
+  mongodb:
+    image: mongo:7.0
+    container_name: jobsapi_mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - jobsapi-network
+
+  # 2. Redis Cache & Message Queue
+  redis:
+    image: redis:7-alpine
+    container_name: jobsapi_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - jobsapi-network
+
+  # 3. Backend REST API Server
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: jobsapi_api
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - MONGODB_URI=mongodb://mongodb:27017/jobsapi
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - FRONTEND_URL=http://localhost:5173
+      - JWT_SECRET=production_jwt_secret_change_in_real_deployment
+      - ADMIN_API_KEY=admin_secret_key_12345
+    depends_on:
+      - mongodb
+      - redis
+    volumes:
+      - upload-data:/usr/src/app/uploads
+    networks:
+      - jobsapi-network
+
+  # 4. Asynchronous Automation Worker (BullMQ + Playwright)
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: jobsapi_worker
+    restart: unless-stopped
+    command: ["node", "src/automation/workers/AutomationWorkerProcessor.js"]
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=mongodb://mongodb:27017/jobsapi
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - BROWSER_POOL_SIZE=5
+      - PLAYWRIGHT_HEADLESS=true
+      - AUTOMATION_CONCURRENCY=3
+    depends_on:
+      - mongodb
+      - redis
+    volumes:
+      - upload-data:/usr/src/app/uploads
+    networks:
+      - jobsapi-network
+
+  # 5. Frontend Single Page Application
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: jobsapi_frontend
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+    networks:
+      - jobsapi-network
+
+networks:
+  jobsapi-network:
+    driver: bridge
+
+volumes:
+  mongo-data:
+  redis-data:
+  upload-data:

@@ -3,17 +3,21 @@ const cors = require('cors');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpecs = require('./config/swagger');
 const logger = require('./config/logger');
+const config = require('./config');
+const requestIdMiddleware = require('./middleware/requestId');
+const errorHandler = require('./middleware/errorHandler');
+const { apiRateLimiter } = require('./middleware/rateLimiter');
 
 const app = express();
 
-const isProduction = process.env.NODE_ENV === 'production';
-const allowedOrigins = isProduction 
-  ? [process.env.FRONTEND_URL].filter(Boolean)
-  : [
-      process.env.FRONTEND_URL,
-      "http://localhost:5173",
-      "http://127.0.0.1:5173"
-    ].filter(Boolean);
+// Trust reverse proxy (for rate limiting, IP resolution in Docker/K8s)
+app.set('trust proxy', 1);
+
+// 1. Correlation Request ID Middleware
+app.use(requestIdMiddleware);
+
+// 2. Security Headers & CORS
+const allowedOrigins = config.SERVER.corsOrigins;
 
 app.use(cors({
   origin: function (origin, callback) {
@@ -25,14 +29,25 @@ app.use(cors({
   },
   credentials: true
 }));
-app.use(express.json());
 
-// Request logging middleware
+// 3. Body Parsers with Size Limits
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+
+// 4. Request Logging with Correlation ID
 app.use((req, res, next) => {
-  logger.info(`${req.method} ${req.url}`);
+  logger.info(`[${req.id}] ${req.method} ${req.url}`);
   next();
 });
 
+// 5. Health, Readiness & Metrics (Unthrottled)
+const healthRoutes = require('./routes/healthRoutes');
+app.use('/', healthRoutes);
+
+// 6. Global Rate Limiter on API namespace
+app.use('/api', apiRateLimiter);
+
+// 7. Route Modules
 const sourceRoutes = require('./routes/sourceRoutes');
 const jobRoutes = require('./routes/jobRoutes');
 const statRoutes = require('./routes/statRoutes');
@@ -44,10 +59,15 @@ const userRoutes = require('./routes/userRoutes');
 const discoveryRoutes = require('./routes/discoveryRoutes');
 const autoApplyRoutes = require('./routes/autoApplyRoutes');
 
-// Serve uploads folder statically if needed
-app.use('/uploads', express.static('uploads'));
+// Serve uploads folder statically with secure cache headers
+app.use('/uploads', express.static('uploads', {
+  maxAge: '1d',
+  setHeaders: (res) => {
+    res.set('X-Content-Type-Options', 'nosniff');
+  }
+}));
 
-// Routes
+// Mount API Routes
 app.use('/api/sources', sourceRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/stats', statRoutes);
@@ -59,21 +79,27 @@ app.use('/api/user', userRoutes);
 app.use('/api/discovery', discoveryRoutes);
 app.use('/api/auto-apply', autoApplyRoutes);
 
-// Swagger UI
+// Swagger UI Documentation
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));
 
-// Default route
+// Root route
 app.get('/', (req, res) => {
-  res.send('Job Source Testing Platform API is running. Check /api-docs for documentation.');
-});
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-  logger.error(`Error: ${err.message}`);
-  res.status(err.status || 500).json({
-    success: false,
-    message: err.message || 'Server Error'
+  res.json({
+    name: 'JobsAPI Platform',
+    version: '1.0.0',
+    status: 'online',
+    documentation: '/api-docs',
+    health: '/health'
   });
 });
+
+// 8. 404 Handler
+app.use((req, res, next) => {
+  const { NotFoundError } = require('./errors/AppErrors');
+  next(new NotFoundError(`Cannot ${req.method} ${req.path}`));
+});
+
+// 9. Centralized Error Handling Middleware
+app.use(errorHandler);
 
 module.exports = app;

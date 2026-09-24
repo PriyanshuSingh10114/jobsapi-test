@@ -1,18 +1,23 @@
 const express = require('express');
 const router = express.Router();
 const AutoApplyEngine = require('../automation/discovery/AutoApplyEngine');
+const { authenticate } = require('../middleware/auth');
+const { validate, schemas } = require('../middleware/validator');
+const { automationRateLimiter } = require('../middleware/rateLimiter');
 
 // Trigger continuous auto-apply cycle for user
-router.post('/run', async (req, res) => {
+router.post('/run', authenticate, automationRateLimiter, validate(schemas.autoApplyRun), async (req, res, next) => {
   try {
-    const { userId, minScore = 75, limit = 5 } = req.body;
-    if (!userId) {
-      return res.status(400).json({ error: 'userId is required' });
-    }
-    const result = await AutoApplyEngine.runAutoApplyCycle(userId, { minScore: Number(minScore), limit: Number(limit) });
+    const userId = req.user?.userId || req.body.userId;
+    const { minScore = 75, limit = 5 } = req.body;
+
+    const result = await AutoApplyEngine.runAutoApplyCycle(userId, {
+      minScore: Number(minScore),
+      limit: Number(limit)
+    });
     res.json({ success: true, result });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 });
 

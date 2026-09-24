@@ -1,12 +1,47 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL,
+  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api',
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
+// Request interceptor for Auth Token & Correlation
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('auth_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// Response interceptor for Uniform Error Handling
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const customMessage = 
+      error.response?.data?.error?.message || 
+      error.response?.data?.message || 
+      error.message || 
+      'An unexpected network error occurred';
+
+    const enhancedError = new Error(customMessage);
+    enhancedError.statusCode = error.response?.status;
+    enhancedError.code = error.response?.data?.error?.code;
+    enhancedError.details = error.response?.data?.error?.details;
+    enhancedError.requestId = error.response?.data?.requestId;
+
+    return Promise.reject(enhancedError);
+  }
+);
+
+// Core API endpoints
+export const fetchHealth = () => axios.get(`${import.meta.env.VITE_API_BASE_URL ? import.meta.env.VITE_API_BASE_URL.replace(/\/api$/, '') : 'http://localhost:5000'}/health`).then((res) => res.data);
 export const fetchSources = () => api.get('/sources').then((res) => res.data.data);
 export const fetchStats = () => api.get('/stats').then((res) => res.data.data);
 export const fetchJobs = (params) => api.get('/jobs', { params }).then((res) => res.data);
@@ -14,6 +49,7 @@ export const searchJobs = (params) => api.get('/jobs/search', { params }).then((
 export const getSuggestions = (q) => api.get('/jobs/suggestions', { params: { q } }).then((res) => res.data.data);
 export const syncJobs = () => api.post('/jobs/sync').then((res) => res.data);
 export const startAutomation = (payload) => api.post('/automation/start', payload).then((res) => res.data);
+
 // Analytics Endpoints
 export const fetchAnalyticsSources = () => api.get('/analytics/sources').then((res) => res.data.data);
 

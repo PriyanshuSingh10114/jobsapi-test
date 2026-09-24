@@ -432,6 +432,25 @@ async function bootstrap() {
       logger.info('Worker Ready');
     });
 
+    // Graceful Shutdown Handlers
+    const shutdown = async (signal) => {
+      logger.info(`Received ${signal}. Gracefully shutting down automation worker...`);
+      try {
+        await worker.close();
+        await BrowserPool.closeAll();
+        await redisConnection.quit();
+        await mongoose.connection.close();
+        logger.info('Automation worker shutdown complete.');
+        process.exit(0);
+      } catch (err) {
+        logger.error(`Error during graceful shutdown: ${err.message}`);
+        process.exit(1);
+      }
+    };
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
+
   } catch (error) {
     logger.error(`Worker startup failed: ${error.message}`);
     process.exit(1);
@@ -439,3 +458,4 @@ async function bootstrap() {
 }
 
 bootstrap();
+

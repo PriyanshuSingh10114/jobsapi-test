@@ -1,5 +1,7 @@
 const express = require('express');
 const { getJobs, syncJobs, searchJobs, getSuggestions } = require('../controllers/jobController');
+const { syncRateLimiter } = require('../middleware/rateLimiter');
+const { authenticate, authorize } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -9,77 +11,34 @@ const router = express.Router();
  *   get:
  *     summary: Get jobs with pagination and filters
  *     tags: [Jobs]
- *     parameters:
- *       - in: query
- *         name: page
- *         schema:
- *           type: integer
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *       - in: query
- *         name: source
- *         schema:
- *           type: string
- *       - in: query
- *         name: remote
- *         schema:
- *           type: boolean
- *     responses:
- *       200:
- *         description: Success
  */
 router.get('/', getJobs);
 
 /**
  * @swagger
- * /api/jobs/search:
+ * /api/jobs/suggestions:
  *   get:
- *     summary: Search jobs
+ *     summary: Autocomplete search suggestions
  *     tags: [Jobs]
- *     parameters:
- *       - in: query
- *         name: role
- *         schema:
- *           type: string
- *       - in: query
- *         name: location
- *         schema:
- *           type: string
- *       - in: query
- *         name: jobType
- *         schema:
- *           type: string
- *       - in: query
- *         name: remote
- *         schema:
- *           type: boolean
- *       - in: query
- *         name: page
- *         schema:
- *           type: integer
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *     responses:
- *       200:
- *         description: Success
  */
 router.get('/suggestions', getSuggestions);
+
+/**
+ * @swagger
+ * /api/jobs/search:
+ *   get:
+ *     summary: Search jobs with relevance scoring and filters
+ *     tags: [Jobs]
+ */
 router.get('/search', searchJobs);
 
 /**
  * @swagger
  * /api/jobs/sync:
  *   post:
- *     summary: Trigger manual sync of all job sources
+ *     summary: Trigger manual synchronization across all ATS sources
  *     tags: [Jobs]
- *     responses:
- *       200:
- *         description: Success
  */
-router.post('/sync', syncJobs);
+router.post('/sync', authenticate, authorize('ADMIN', 'SYSTEM'), syncRateLimiter, syncJobs);
 
 module.exports = router;
