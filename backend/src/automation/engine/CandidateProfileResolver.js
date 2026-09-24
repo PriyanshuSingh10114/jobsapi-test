@@ -1,19 +1,23 @@
 const fs = require('fs').promises;
 const path = require('path');
 const UserProfile = require('../../models/UserProfile');
+const UCKGraph = require('../../models/UCKGraph');
 const logger = require('../../config/logger');
 
 class CandidateProfileResolver {
   /**
-   * Fetches the raw profile from MongoDB, normalizes it into a strictly typed CandidateProfile,
-   * and validates the physical presence of uploaded assets.
+   * Fetches the raw profile from MongoDB (checking UCKGraph first, then UserProfile),
+   * normalizes it into a strictly typed CandidateProfile, and validates uploaded assets.
    * @param {string} userId - The Clerk userId
    * @returns {Promise<Object>} Normalized CandidateProfile
    */
   static async fetchAndNormalize(userId) {
     logger.info(`CandidateProfileResolver: Fetching profile for ${userId}`);
     
-    const profile = await UserProfile.findOne({ userId });
+    let profile = await UCKGraph.findOne({ userId });
+    if (!profile) {
+      profile = await UserProfile.findOne({ userId });
+    }
     if (!profile) {
       throw new Error('Profile not found. Please complete Profile Studio.');
     }
@@ -33,12 +37,12 @@ class CandidateProfileResolver {
     // PHASE 2: NORMALIZATION
     const normalized = {
       personal: {
-        firstName: raw.basicInfo?.firstName || raw.firstName || '',
-        middleName: raw.basicInfo?.middleName || '',
-        lastName: raw.basicInfo?.lastName || raw.lastName || '',
-        preferredName: raw.basicInfo?.preferredName || raw.firstName || '',
-        dob: raw.basicInfo?.dob || '',
-        pronouns: raw.basicInfo?.pronouns || ''
+        firstName: raw.identity?.firstName || raw.basicInfo?.firstName || raw.firstName || '',
+        middleName: raw.identity?.middleName || raw.basicInfo?.middleName || '',
+        lastName: raw.identity?.lastName || raw.basicInfo?.lastName || raw.lastName || '',
+        preferredName: raw.identity?.preferredName || raw.basicInfo?.preferredName || raw.firstName || '',
+        dob: raw.identity?.dateOfBirth || raw.basicInfo?.dob || '',
+        pronouns: raw.identity?.pronouns || raw.basicInfo?.pronouns || ''
       },
       contact: {
         email: raw.basicInfo?.email || raw.email || '',

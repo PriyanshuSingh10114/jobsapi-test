@@ -4,7 +4,11 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const UserProfile = require('../models/UserProfile');
+const UCKGraph = require('../models/UCKGraph');
+const ProfileHistory = require('../models/ProfileHistory');
 const CandidateProfileResolver = require('../automation/engine/CandidateProfileResolver');
+const ATSReadinessEngine = require('../automation/engine/ATSReadinessEngine');
+const UNIVERSAL_FIELD_REGISTRY = require('../config/universalFieldRegistry');
 
 // Ensure upload directory exists
 const uploadDir = path.join(process.cwd(), 'uploads', 'resumes');
@@ -67,16 +71,61 @@ function calculateCompleteness(profile) {
   };
 }
 
+// GET /api/user/registry
+router.get('/registry', (req, res) => {
+  res.json({ success: true, count: UNIVERSAL_FIELD_REGISTRY.length, registry: UNIVERSAL_FIELD_REGISTRY });
+});
+
+// GET /api/user/readiness
+router.get('/readiness', async (req, res, next) => {
+  try {
+    let profile = await UCKGraph.findOne({ userId: DEFAULT_USER_ID });
+    if (!profile) profile = await UserProfile.findOne({ userId: DEFAULT_USER_ID });
+    const readiness = ATSReadinessEngine.calculateReadiness(profile);
+    res.json({ success: true, readiness });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Helper function to deep-merge objects
+function deepMerge(target = {}, source = {}) {
+  const output = { ...target };
+  for (const key of Object.keys(source)) {
+    if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+      output[key] = deepMerge(target[key] || {}, source[key]);
+    } else if (source[key] !== undefined) {
+      output[key] = source[key];
+    }
+  }
+  return output;
+}
+
 // GET /api/user/profile
 router.get('/profile', async (req, res, next) => {
   try {
-    let profile = await UserProfile.findOne({ userId: DEFAULT_USER_ID });
-    if (!profile) {
-      profile = await UserProfile.create({ userId: DEFAULT_USER_ID });
+    let userProfileDoc = await UserProfile.findOne({ userId: DEFAULT_USER_ID });
+    if (!userProfileDoc) {
+      userProfileDoc = await UserProfile.create({ userId: DEFAULT_USER_ID });
     }
-    
-    const completeness = calculateCompleteness(profile);
-    res.json({ success: true, profile, completeness });
+    let uckDoc = await UCKGraph.findOne({ userId: DEFAULT_USER_ID });
+
+    // Deep merge UserProfile & UCKGraph into unified response
+    const plainUserProfile = userProfileDoc.toObject ? userProfileDoc.toObject() : userProfileDoc;
+    const plainUCK = uckDoc ? (uckDoc.toObject ? uckDoc.toObject() : uckDoc) : {};
+    const mergedProfile = deepMerge(plainUserProfile, plainUCK);
+
+    // Ensure identity and basicInfo mirror each other
+    if (mergedProfile.identity) {
+      mergedProfile.basicInfo = { ...mergedProfile.basicInfo, ...mergedProfile.identity };
+    }
+    if (mergedProfile.contact) {
+      mergedProfile.basicInfo = { ...mergedProfile.basicInfo, ...mergedProfile.contact };
+    }
+
+    const completeness = calculateCompleteness(mergedProfile);
+    const readiness = ATSReadinessEngine.calculateReadiness(mergedProfile);
+    res.json({ success: true, profile: mergedProfile, completeness, readiness });
   } catch (error) {
     next(error);
   }
@@ -93,6 +142,16 @@ router.get('/profile/complete', async (req, res, next) => {
       profile: normalizedProfile,
       validation: validationReport
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /api/user/history
+router.get('/history', async (req, res, next) => {
+  try {
+    const history = await ProfileHistory.find({ userId: DEFAULT_USER_ID }).sort({ createdAt: -1 }).limit(50);
+    res.json({ success: true, count: history.length, history });
   } catch (error) {
     next(error);
   }
@@ -115,14 +174,61 @@ router.patch('/profile', async (req, res, next) => {
 
     const updateFields = flatten(req.body);
     
-    let profile = await UserProfile.findOneAndUpdate(
+    // Auto-map canonical fields to legacy fields for complete backward compatibility
+    const extraFields = {};
+    if (updateFields['identity.firstName']) extraFields['basicInfo.firstName'] = updateFields['identity.firstName'];
+    if (updateFields['identity.middleName']) extraFields['basicInfo.middleName'] = updateFields['identity.middleName'];
+    if (updateFields['identity.lastName']) extraFields['basicInfo.lastName'] = updateFields['identity.lastName'];
+    if (updateFields['identity.preferredName']) extraFields['basicInfo.preferredName'] = updateFields['identity.preferredName'];
+    if (updateFields['identity.pronouns']) extraFields['basicInfo.pronouns'] = updateFields['identity.pronouns'];
+    if (updateFields['contact.email']) extraFields['basicInfo.email'] = updateFields['contact.email'];
+    if (updateFields['contact.phone']) extraFields['basicInfo.phone'] = updateFields['contact.phone'];
+    if (updateFields['authorization.isAuthorizedInUS'] !== undefined) extraFields['workAuthorization.citizen'] = updateFields['authorization.isAuthorizedInUS'];
+    if (updateFields['authorization.requiresSponsorshipNowOrFuture'] !== undefined) extraFields['workAuthorization.needSponsorship'] = updateFields['authorization.requiresSponsorshipNowOrFuture'];
+
+    const fullUpdatePayload = { ...updateFields, ...extraFields };
+
+    // Log history audit records
+    Object.entries(updateFields).forEach(async ([fieldCanonicalId, newValue]) => {
+      try {
+        await ProfileHistory.create({
+          userId: DEFAULT_USER_ID,
+          fieldCanonicalId,
+          newValue,
+          source: 'User',
+          changedBy: 'User'
+        });
+      } catch (e) {}
+    });
+
+    // ATOMIC DUAL-DOCUMENT UPDATE
+    const updatedUserProfile = await UserProfile.findOneAndUpdate(
       { userId: DEFAULT_USER_ID },
-      { $set: updateFields },
+      { $set: fullUpdatePayload },
       { new: true, upsert: true }
     );
-    
-    const completeness = calculateCompleteness(profile);
-    res.json({ success: true, profile, completeness });
+
+    const updatedUCK = await UCKGraph.findOneAndUpdate(
+      { userId: DEFAULT_USER_ID },
+      { $set: fullUpdatePayload },
+      { new: true, upsert: true }
+    );
+
+    // Deep merge response
+    const plainUserProfile = updatedUserProfile.toObject ? updatedUserProfile.toObject() : updatedUserProfile;
+    const plainUCK = updatedUCK ? (updatedUCK.toObject ? updatedUCK.toObject() : updatedUCK) : {};
+    const mergedProfile = deepMerge(plainUserProfile, plainUCK);
+
+    if (mergedProfile.identity) {
+      mergedProfile.basicInfo = { ...mergedProfile.basicInfo, ...mergedProfile.identity };
+    }
+    if (mergedProfile.contact) {
+      mergedProfile.basicInfo = { ...mergedProfile.basicInfo, ...mergedProfile.contact };
+    }
+
+    const completeness = calculateCompleteness(mergedProfile);
+    const readiness = ATSReadinessEngine.calculateReadiness(mergedProfile);
+    res.json({ success: true, profile: mergedProfile, completeness, readiness });
   } catch (error) {
     next(error);
   }

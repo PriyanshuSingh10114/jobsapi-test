@@ -17,11 +17,13 @@ export const startAutomation = (payload) => api.post('/automation/start', payloa
 // Analytics Endpoints
 export const fetchAnalyticsSources = () => api.get('/analytics/sources').then((res) => res.data.data);
 
-// User Profile Endpoints
+// User Profile & Registry Endpoints
 export const fetchProfile = () => api.get('/user/profile').then((res) => res.data);
 export const updateProfile = (profileData) => api.patch('/user/profile', profileData).then((res) => res.data);
 export const uploadResume = (formData) => api.post('/user/resume', formData, {
   headers: { 'Content-Type': 'multipart/form-data' }
 }).then((res) => res.data);
+export const fetchFieldRegistry = () => api.get('/user/registry').then((res) => res.data);
+export const fetchATSReadiness = () => api.get('/user/readiness').then((res) => res.data);
 
 export default api;

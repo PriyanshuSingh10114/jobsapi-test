@@ -48,6 +48,41 @@ const resumeAssetSchema = new mongoose.Schema({
 const userProfileSchema = new mongoose.Schema({
   userId: { type: String, required: true, unique: true },
 
+  // CANONICAL PATH SUPPORT (Prevents Mongoose strict schema stripping)
+  identity: {
+    firstName: { type: String, default: '' },
+    middleName: { type: String, default: '' },
+    lastName: { type: String, default: '' },
+    preferredName: { type: String, default: '' },
+    pronouns: { type: String, default: '' },
+    dateOfBirth: { type: String, default: '' }
+  },
+  contact: {
+    email: { type: String, default: '' },
+    secondaryEmail: { type: String, default: '' },
+    phone: { type: String, default: '' },
+    countryCode: { type: String, default: '+1' }
+  },
+  authorization: {
+    isAuthorizedInUS: { type: Boolean, default: true },
+    requiresSponsorshipNowOrFuture: { type: Boolean, default: false },
+    visaType: { type: String, default: '' },
+    visaExpirationDate: { type: String, default: '' }
+  },
+  compliance: {
+    isITARUSPerson: { type: Boolean, default: true },
+    securityClearance: { type: String, default: 'None' },
+    clearanceActiveUntil: { type: String, default: '' },
+    formerEmployee: { type: Boolean, default: false },
+    hasNonCompete: { type: Boolean, default: false }
+  },
+  demographics: {
+    gender: { type: String, default: 'Decline' },
+    raceEthnicity: { type: String, default: 'Decline' },
+    veteranStatus: { type: String, default: 'Decline' },
+    disabilityStatus: { type: String, default: 'Decline' }
+  },
+
   // SECTION 1: Basic Identity
   basicInfo: {
     firstName: { type: String, default: '' },

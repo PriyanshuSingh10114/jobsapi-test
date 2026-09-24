@@ -1,40 +1,41 @@
 const BrowserManager = require('./BrowserManager');
 const ActiveSessionRegistry = require('./ActiveSessionRegistry');
 const logger = require('../../config/logger');
+const { BrowserUnavailableError } = require('../errors/CustomErrors');
 
 class BrowserPool {
   constructor() {
-    this.maxInstances = 1;
-    this.pool = [];
-    this.inUse = new Set();
+    this.maxInstances = parseInt(process.env.BROWSER_POOL_SIZE || '5', 10);
+    this.pool = []; // Array of { browser, status: 'Available' | 'InUse' | 'Reserved', sessionId: string | null }
+    this.waitQueue = []; // Array of resolve functions waiting for an available browser
     this.activeAcquisitions = new Map(); // sessionId -> browser
   }
 
   async initialize() {
-    logger.info('BrowserPool initialized in lazy mode.');
+    logger.info(`BrowserPool initialized with concurrency size: ${this.maxInstances}`);
   }
 
   async addNewBrowser() {
     const isDev = process.env.NODE_ENV === 'development';
-    const manager = new BrowserManager({ headless: !isDev }); // Set to false only in dev for real-time viewing
+    const manager = new BrowserManager({ headless: !isDev });
     const browser = await manager.launch();
     
+    const poolItem = { browser, status: 'Available', sessionId: null };
+
     browser.on('disconnected', () => {
-      logger.warn(`Browser disconnected. Removing from pool.`);
-      this.pool = this.pool.filter(b => b !== browser);
-      this.inUse.delete(browser);
+      logger.warn(`Browser disconnected. Cleaning up pool item.`);
+      this.pool = this.pool.filter(item => item.browser !== browser);
       for (const [sId, b] of this.activeAcquisitions.entries()) {
         if (b === browser) this.activeAcquisitions.delete(sId);
       }
-      // Removed auto-replace on crash to prevent multiple browser windows spanning. It will lazily replace on next acquire.
     });
 
-    this.pool.push(browser);
-    return browser;
+    this.pool.push(poolItem);
+    return poolItem;
   }
 
   async acquire(sessionId = 'default') {
-    // If ActiveSessionRegistry holds a live active session for this sessionId, reuse browser
+    // 1. Re-use existing browser from ActiveSessionRegistry if session is paused or active
     if (ActiveSessionRegistry.has(sessionId)) {
       const activeSession = ActiveSessionRegistry.get(sessionId);
       logger.info(`[BrowserPool] Reusing existing active browser instance for session: ${sessionId}`);
@@ -42,33 +43,60 @@ class BrowserPool {
     }
 
     if (this.activeAcquisitions.has(sessionId)) {
-      const err = new Error(`[BrowserPool Violation] Multiple BrowserPool.acquire() attempted for session: ${sessionId}. Exactly one browser acquisition is permitted per automation job.`);
-      logger.error(err.message);
-      throw err;
+      const existingBrowser = this.activeAcquisitions.get(sessionId);
+      if (existingBrowser && existingBrowser.isConnected()) {
+        return existingBrowser;
+      }
+      this.activeAcquisitions.delete(sessionId);
     }
 
-    // Find first available browser
-    const availableBrowser = this.pool.find(b => !this.inUse.has(b));
-    let browser;
+    // 2. Find an available idle browser item in pool
+    let item = this.pool.find(i => i.status === 'Available' && i.browser.isConnected());
     
-    if (availableBrowser) {
-      this.inUse.add(availableBrowser);
-      browser = availableBrowser;
-    } else if (this.pool.length < this.maxInstances) {
-      browser = await this.addNewBrowser();
-      this.inUse.add(browser);
-    } else {
-      throw new Error('No browsers available in pool. Wait and retry.');
+    if (!item && this.pool.length < this.maxInstances) {
+      item = await this.addNewBrowser();
     }
 
-    this.activeAcquisitions.set(sessionId, browser);
-    return browser;
+    // 3. If pool is exhausted, queue the request asynchronously instead of throwing an error immediately
+    if (!item) {
+      logger.warn(`[BrowserPool] Pool exhausted (${this.pool.length}/${this.maxInstances}). Queuing request for session ${sessionId}...`);
+      
+      const timeoutMs = 30000; // 30 seconds wait timeout
+      const queuedItemPromise = new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          const idx = this.waitQueue.findIndex(q => q.resolve === resolve);
+          if (idx !== -1) this.waitQueue.splice(idx, 1);
+          reject(new BrowserUnavailableError(`Browser Pool acquisition timed out after ${timeoutMs}ms`, { sessionId }));
+        }, timeoutMs);
+
+        this.waitQueue.push({ resolve, timer, sessionId });
+      });
+
+      return await queuedItemPromise;
+    }
+
+    item.status = 'InUse';
+    item.sessionId = sessionId;
+    this.activeAcquisitions.set(sessionId, item.browser);
+    return item.browser;
+  }
+
+  reserve(browser, sessionId) {
+    const item = this.pool.find(i => i.browser === browser);
+    if (item) {
+      item.status = 'Reserved';
+      item.sessionId = sessionId;
+      logger.info(`[BrowserPool] Browser reserved for WaitingForUser session ${sessionId}`);
+    }
   }
 
   release(browser, sessionId = null) {
-    if (this.inUse.has(browser)) {
-      this.inUse.delete(browser);
+    const item = this.pool.find(i => i.browser === browser);
+    if (item) {
+      item.status = 'Available';
+      item.sessionId = null;
     }
+
     if (sessionId && this.activeAcquisitions.has(sessionId)) {
       this.activeAcquisitions.delete(sessionId);
     } else {
@@ -79,17 +107,31 @@ class BrowserPool {
         }
       }
     }
+
+    // Process queued acquisition requests if any
+    if (this.waitQueue.length > 0) {
+      const nextRequest = this.waitQueue.shift();
+      clearTimeout(nextRequest.timer);
+      
+      this.acquire(nextRequest.sessionId)
+        .then(nextRequest.resolve)
+        .catch(err => logger.error(`[BrowserPool] Failed queued acquisition for ${nextRequest.sessionId}: ${err.message}`));
+    }
   }
 
   async closeAll() {
     logger.info('Closing all browsers in pool...');
-    for (const browser of this.pool) {
-      await browser.close();
+    for (const item of this.pool) {
+      try {
+        if (item.browser && item.browser.isConnected()) {
+          await item.browser.close();
+        }
+      } catch (e) {}
     }
     this.pool = [];
-    this.inUse.clear();
+    this.waitQueue = [];
+    this.activeAcquisitions.clear();
   }
 }
 
-// Singleton export
 module.exports = new BrowserPool();

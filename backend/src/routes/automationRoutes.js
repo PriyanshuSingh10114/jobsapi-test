@@ -50,4 +50,18 @@ router.get('/logs/:id', async (req, res, next) => {
   }
 });
 
+// GET /automation/context/:sessionId
+router.get('/context/:sessionId', async (req, res, next) => {
+  try {
+    const ApplicationContext = require('../models/ApplicationContext');
+    const appContext = await ApplicationContext.findOne({ sessionId: req.params.sessionId });
+    if (!appContext) {
+      return res.status(404).json({ success: false, message: 'Application context not found' });
+    }
+    res.json({ success: true, context: appContext });
+  } catch (error) {
+    next(error);
+  }
+});
+
 module.exports = router;

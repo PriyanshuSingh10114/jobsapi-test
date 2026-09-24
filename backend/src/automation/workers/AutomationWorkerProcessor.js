@@ -50,7 +50,7 @@ async function bootstrap() {
       const stateMachine = new ApplicationStateMachine(sessionId);
       const telemetry = new TelemetryManager(sessionId, connectorName);
       const eventLogger = new BrowserEventLogger(sessionId);
-      let browser, context, page, automationContext, connector;
+      let browser, context, page, automationContext, connector, appSession;
       
       try {
         const startTime = Date.now();
@@ -65,11 +65,11 @@ async function bootstrap() {
         const resolvedATSKey = (connectorName && connectorName !== 'generic') ? connectorName : detection.atsKey;
 
         // Load session info
-        const appSession = await stateMachine.load();
+        appSession = await stateMachine.load();
         
-        if (appSession.status === 'Queued' || appSession.status === 'Created') {
+        if (appSession?.status === 'Queued' || appSession?.status === 'Created') {
             await stateMachine.updateState('WorkerAssigned');
-        } else if (appSession.status === 'WaitingForUser') {
+        } else if (appSession?.status === 'WaitingForUser') {
             await stateMachine.updateState('ReadyForSubmission');
         }
         
@@ -193,6 +193,23 @@ async function bootstrap() {
         const browserSession = await SessionManager.getOrCreateSession(userId, resolvedATSKey);
         connector = ATSConnectorFactory.createConnector(resolvedATSKey, automationContext, browserSession);
 
+        // Initialize Layer 4 Application Context
+        const ApplicationContext = require('../../models/ApplicationContext');
+        let appContext = await ApplicationContext.findOne({ sessionId });
+        if (!appContext) {
+          appContext = await ApplicationContext.create({
+            sessionId,
+            jobId,
+            userId,
+            atsKey: resolvedATSKey,
+            company: targetJob.company,
+            appliedUrl: targetJob.applyUrl,
+            uploadedResumePath: profileData.documents?.defaultResume || '',
+            submittedSalary: profileData.preferences?.desiredMinSalary || 0,
+            submittedAvailability: profileData.preferences?.noticePeriod || '2 Weeks'
+          });
+        }
+
         // Restore cached telemetry and execution state if resuming
         if (appSession.stateData?.completedFields) {
           connector.completedFields = appSession.stateData.completedFields || [];
@@ -256,6 +273,7 @@ async function bootstrap() {
             completedFields: completedFields.length > 0 ? completedFields : (cachedReport?.executionStats?.completedFields || []),
             pendingFields: pendingFields,
             uploadResults: connector.uploadResults?.length > 0 ? connector.uploadResults : (cachedReport?.uploadVerificationResults || []),
+            diagnosticsTable: connector.diagnosticsTable || [],
             executionTimeSeconds: executionTimeSec
         });
 
@@ -266,13 +284,17 @@ async function bootstrap() {
             'stateData.diagnosticsReport': diagnosticsReport,
             'stateData.completedFields': completedFields,
             'stateData.pendingFields': pendingFields,
-            'stateData.uploadResults': connector.uploadResults
+            'stateData.uploadResults': connector.uploadResults,
+            'stateData.diagnosticsTable': connector.diagnosticsTable || []
           }
         });
 
         if (pendingFields.length > 0) {
             await runStep('WaitingForUser', async () => {
                await eventLogger.info('JobPaused', `Application requires manual input for ${pendingFields.length} fields`, diagnosticsReport);
+               if (browser) {
+                 BrowserPool.reserve(browser, sessionId);
+               }
             });
             
             return {

@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchProfile, updateProfile, uploadResume } from '../services/api';
+import { fetchProfile, updateProfile, uploadResume, fetchFieldRegistry, fetchATSReadiness } from '../services/api';
+import { UNIVERSAL_FIELD_REGISTRY as LOCAL_REGISTRY } from '../config/universalFieldRegistry';
 import { 
   User, MapPin, Link as LinkIcon, FileText, Briefcase, GraduationCap, 
   Award, FolderGit2, Code, Globe, Sliders, PieChart, Sparkles, BrainCircuit,
-  CheckCircle, AlertCircle, Search, Save, Upload, Plus, Trash2, ChevronDown, ChevronRight
+  CheckCircle, AlertCircle, Search, Upload, Shield, Lock, ChevronDown, ChevronRight
 } from 'lucide-react';
 
-// Debounce helper
 function debounce(func, wait) {
   let timeout;
   return function executedFunction(...args) {
@@ -17,52 +17,68 @@ function debounce(func, wait) {
   };
 }
 
-const SECTIONS = [
-  { id: 'basicInfo', icon: User, title: 'Basic Identity' },
-  { id: 'location', icon: MapPin, title: 'Location' },
-  { id: 'links', icon: LinkIcon, title: 'Professional Links' },
-  { id: 'assets', icon: FileText, title: 'Resume Assets' },
-  { id: 'professionalInfo', icon: Briefcase, title: 'Professional Info' },
-  { id: 'education', icon: GraduationCap, title: 'Education' },
-  { id: 'experience', icon: Briefcase, title: 'Experience' },
-  { id: 'projects', icon: FolderGit2, title: 'Projects' },
-  { id: 'skills', icon: Code, title: 'Skills' },
-  { id: 'certifications', icon: Award, title: 'Certifications' },
-  { id: 'workAuthorization', icon: Globe, title: 'Work Authorization' },
-  { id: 'preferences', icon: Sliders, title: 'Preferences' },
-  { id: 'demographic', icon: PieChart, title: 'Demographic' },
-  { id: 'aiProfile', icon: Sparkles, title: 'AI Generated Profile' },
+const SECTION_METADATA = [
+  { id: 'identity', icon: User, title: 'Core Identity' },
+  { id: 'contact', icon: User, title: 'Contact Information' },
+  { id: 'location', icon: MapPin, title: 'Location & Address' },
+  { id: 'authorization', icon: Globe, title: 'Work Auth & Defense' },
+  { id: 'links', icon: LinkIcon, title: 'Profiles & Social Links' },
+  { id: 'preferences', icon: Sliders, title: 'Comp & Preferences' },
+  { id: 'demographics', icon: PieChart, title: 'US EEO & Demographics' },
+  { id: 'assets', icon: FileText, title: 'Resume Documents' },
   { id: 'answerBank', icon: BrainCircuit, title: 'AI Answer Bank' }
 ];
 
 export default function ProfilePage() {
   const queryClient = useQueryClient();
-  const [activeSection, setActiveSection] = useState('basicInfo');
+  const [activeSection, setActiveSection] = useState('identity');
   const [formData, setFormData] = useState({});
-  const [saveStatus, setSaveStatus] = useState('saved'); // 'saved', 'saving', 'error'
-  const [completeness, setCompleteness] = useState({ overall: 0, missingFields: [] });
+  const [saveStatus, setSaveStatus] = useState('saved');
   const [searchQuery, setSearchQuery] = useState('');
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
-  const { data: response, isLoading } = useQuery({
+  const { data: profileRes, isLoading: isProfileLoading } = useQuery({
     queryKey: ['profile'],
     queryFn: fetchProfile
   });
 
+  const { data: registryRes } = useQuery({
+    queryKey: ['registry'],
+    queryFn: fetchFieldRegistry,
+    staleTime: Infinity
+  });
+
+  const { data: readinessRes } = useQuery({
+    queryKey: ['readiness'],
+    queryFn: fetchATSReadiness
+  });
+
+  const registry = registryRes?.registry || LOCAL_REGISTRY;
+  const readiness = readinessRes?.readiness || profileRes?.readiness || { overallScore: 0, atsBreakdown: {} };
+
   useEffect(() => {
-    if (response?.profile) {
-      setFormData(response.profile);
-      if (response.completeness) {
-        setCompleteness(response.completeness);
-      }
+    if (profileRes?.profile) {
+      setFormData(profileRes.profile);
     }
-  }, [response]);
+  }, [profileRes]);
 
   const updateMutation = useMutation({
     mutationFn: updateProfile,
     onSuccess: (res) => {
       setSaveStatus('saved');
-      if (res.profile) setFormData(res.profile);
-      if (res.completeness) setCompleteness(res.completeness);
+      if (res.profile) {
+        setFormData(prev => ({
+          ...prev,
+          ...res.profile,
+          identity: { ...(prev.identity || {}), ...(res.profile.identity || {}) },
+          contact: { ...(prev.contact || {}), ...(res.profile.contact || {}) },
+          location: { ...(prev.location || {}), ...(res.profile.location || {}) },
+          authorization: { ...(prev.authorization || {}), ...(res.profile.authorization || {}) },
+          compliance: { ...(prev.compliance || {}), ...(res.profile.compliance || {}) },
+          demographics: { ...(prev.demographics || {}), ...(res.profile.demographics || {}) }
+        }));
+      }
+      queryClient.invalidateQueries(['readiness']);
     },
     onError: () => setSaveStatus('error')
   });
@@ -72,11 +88,11 @@ export default function ProfilePage() {
     onSuccess: (res) => {
       setSaveStatus('saved');
       if (res.profile) setFormData(res.profile);
+      queryClient.invalidateQueries(['readiness']);
     },
     onError: () => setSaveStatus('error')
   });
 
-  // Autosave
   const debouncedSave = useCallback(
     debounce((data) => {
       setSaveStatus('saving');
@@ -85,43 +101,17 @@ export default function ProfilePage() {
     []
   );
 
-  const handleChange = (section, field, value) => {
-    const updated = {
-      ...formData,
-      [section]: {
-        ...(formData[section] || {}),
-        [field]: value
-      }
-    };
-    setFormData(updated);
-    setSaveStatus('saving');
-    debouncedSave({ [section]: updated[section] });
-  };
-
-  const handleArrayChange = (section, index, field, value) => {
-    const arr = [...(formData[section] || [])];
-    arr[index] = { ...arr[index], [field]: value };
-    const updated = { ...formData, [section]: arr };
-    setFormData(updated);
-    setSaveStatus('saving');
-    debouncedSave({ [section]: arr });
-  };
-
-  const addArrayItem = (section, defaultItem) => {
-    const arr = [...(formData[section] || []), defaultItem];
-    const updated = { ...formData, [section]: arr };
-    setFormData(updated);
-    setSaveStatus('saving');
-    debouncedSave({ [section]: arr });
-  };
-
-  const removeArrayItem = (section, index) => {
-    const arr = [...(formData[section] || [])];
-    arr.splice(index, 1);
-    const updated = { ...formData, [section]: arr };
-    setFormData(updated);
-    setSaveStatus('saving');
-    debouncedSave({ [section]: arr });
+  const handleFieldChange = (canonicalId, value) => {
+    const parts = canonicalId.split('.');
+    let updated = { ...formData };
+    
+    if (parts.length === 2) {
+      const [sec, sub] = parts;
+      updated[sec] = { ...(updated[sec] || {}), [sub]: value };
+      setFormData(updated);
+      setSaveStatus('saving');
+      debouncedSave({ [sec]: updated[sec] });
+    }
   };
 
   const handleFileUpload = (e) => {
@@ -134,148 +124,155 @@ export default function ProfilePage() {
     }
   };
 
-  if (isLoading) {
+  if (isProfileLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
       </div>
     );
   }
 
-  const renderInput = (section, field, label, type = 'text', placeholder = '') => (
-    <div className="mb-4">
-      <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
-      {type === 'textarea' ? (
-        <textarea
-          value={(formData[section] && formData[section][field]) || ''}
-          onChange={(e) => handleChange(section, field, e.target.value)}
-          placeholder={placeholder}
-          className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-500 outline-none min-h-[100px]"
-        />
-      ) : type === 'checkbox' ? (
-        <div className="flex items-center mt-2">
-          <input
-            type="checkbox"
-            checked={(formData[section] && formData[section][field]) || false}
-            onChange={(e) => handleChange(section, field, e.target.checked)}
-            className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
-          />
-          <span className="ml-2 text-sm text-slate-700">{label}</span>
+  const renderField = (field) => {
+    const parts = field.canonicalId.split('.');
+    let currentValue = parts.length === 2 ? (formData[parts[0]]?.[parts[1]] ?? '') : '';
+    if (!currentValue && parts[0] === 'identity' && formData.basicInfo) {
+      currentValue = formData.basicInfo[parts[1]] ?? '';
+    }
+    if (!currentValue && parts[0] === 'contact' && formData.basicInfo) {
+      currentValue = formData.basicInfo[parts[1]] ?? '';
+    }
+
+    return (
+      <div key={field.canonicalId} className="mb-5 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+            {field.displayName}
+            {field.isRequired && <span className="text-red-500">*</span>}
+          </label>
+          <div className="flex items-center gap-1">
+            {field.atsPlatforms?.map(ats => (
+              <span key={ats} className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] font-medium rounded-full">
+                {ats}
+              </span>
+            ))}
+          </div>
         </div>
-      ) : (
-        <input
-          type={type}
-          value={(formData[section] && formData[section][field]) || ''}
-          onChange={(e) => handleChange(section, field, e.target.value)}
-          placeholder={placeholder}
-          className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-primary-500 outline-none"
-        />
-      )}
-    </div>
-  );
+
+        {field.description && <p className="text-xs text-slate-500 mb-2">{field.description}</p>}
+
+        {field.inputType === 'select' ? (
+          <select
+            value={currentValue}
+            onChange={(e) => {
+              const val = field.dataType === 'boolean' ? e.target.value === 'true' : e.target.value;
+              handleFieldChange(field.canonicalId, val);
+            }}
+            className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+          >
+            <option value="">-- Select Option --</option>
+            {field.options?.map(opt => (
+              <option key={String(opt.value)} value={String(opt.value)}>{opt.label}</option>
+            ))}
+          </select>
+        ) : field.inputType === 'textarea' ? (
+          <textarea
+            value={currentValue}
+            onChange={(e) => handleFieldChange(field.canonicalId, e.target.value)}
+            rows={3}
+            placeholder={field.exampleValue}
+            className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
+          />
+        ) : (
+          <input
+            type={field.inputType || 'text'}
+            value={currentValue}
+            onChange={(e) => handleFieldChange(field.canonicalId, e.target.value)}
+            placeholder={field.exampleValue}
+            className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+          />
+        )}
+      </div>
+    );
+  };
 
   const renderSectionContent = () => {
-    switch (activeSection) {
-      case 'basicInfo':
-        return (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {renderInput('basicInfo', 'firstName', 'First Name')}
-            {renderInput('basicInfo', 'middleName', 'Middle Name')}
-            {renderInput('basicInfo', 'lastName', 'Last Name')}
-            {renderInput('basicInfo', 'preferredName', 'Preferred Name')}
-            {renderInput('basicInfo', 'email', 'Email Address', 'email')}
-            {renderInput('basicInfo', 'phone', 'Phone Number', 'tel')}
-            {renderInput('basicInfo', 'profilePhoto', 'Profile Photo URL')}
-          </div>
-        );
-      case 'location':
-        return (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {renderInput('location', 'country', 'Current Country')}
-            {renderInput('location', 'state', 'State / Province')}
-            {renderInput('location', 'city', 'City')}
-            {renderInput('location', 'zipCode', 'ZIP / Postal Code')}
-            {renderInput('location', 'willingToRelocate', 'Willing to Relocate', 'checkbox')}
-          </div>
-        );
-      case 'links':
-        return (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {renderInput('links', 'linkedin', 'LinkedIn URL')}
-            {renderInput('links', 'github', 'GitHub URL')}
-            {renderInput('links', 'portfolio', 'Portfolio URL')}
-            {renderInput('links', 'personalWebsite', 'Personal Website')}
-          </div>
-        );
-      case 'professionalInfo':
-        return (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {renderInput('professionalInfo', 'currentCompany', 'Current Company')}
-            {renderInput('professionalInfo', 'currentPosition', 'Current Position')}
-            {renderInput('professionalInfo', 'yearsExperience', 'Years of Experience', 'number')}
-            {renderInput('professionalInfo', 'expectedSalary', 'Expected Salary')}
-            {renderInput('professionalInfo', 'noticePeriod', 'Notice Period')}
-          </div>
-        );
-      case 'assets':
-        return (
-          <div>
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-slate-700 mb-2">Upload Resume (PDF)</label>
-              <div className="relative border-2 border-dashed border-slate-300 rounded-xl p-8 text-center hover:bg-slate-50 transition">
-                <input type="file" accept=".pdf" onChange={handleFileUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                <Upload className="mx-auto h-8 w-8 text-slate-400 mb-2" />
-                <p className="text-sm text-slate-600 font-medium">Click or drag file here to upload</p>
-              </div>
-            </div>
-            <div>
-              <h4 className="font-semibold text-slate-800 mb-3">Stored Assets</h4>
-              <div className="space-y-3">
-                {formData.assets?.map((asset, i) => (
-                  <div key={i} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <FileText className="text-primary-600 h-5 w-5" />
-                      <div>
-                        <p className="text-sm font-medium text-slate-800">{asset.name}</p>
-                        <p className="text-xs text-slate-500">ATS Score: {asset.atsScore}</p>
-                      </div>
-                    </div>
+    if (activeSection === 'assets') {
+      return (
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+          <h3 className="text-lg font-bold text-slate-800">Resume & Documents</h3>
+          <p className="text-sm text-slate-500">Upload your primary PDF resume used for browser automation.</p>
+          <input type="file" accept=".pdf" onChange={handleFileUpload} className="hidden" id="resume-upload" />
+          <label htmlFor="resume-upload" className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-indigo-200 hover:border-indigo-400 rounded-2xl cursor-pointer transition-colors bg-indigo-50/50">
+            <Upload className="h-8 w-8 text-indigo-600 mb-2" />
+            <span className="text-sm font-semibold text-slate-700">Click to upload Resume PDF</span>
+          </label>
+
+          {formData.assets?.length > 0 && (
+            <div className="space-y-2 mt-4">
+              <h4 className="text-sm font-bold text-slate-700">Uploaded Documents:</h4>
+              {formData.assets.map((asset, i) => (
+                <div key={i} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <div className="flex items-center gap-3">
+                    <FileText className="h-5 w-5 text-indigo-600" />
+                    <span className="text-sm font-medium text-slate-700">{asset.name}</span>
                   </div>
-                ))}
-                {(!formData.assets || formData.assets.length === 0) && (
-                  <p className="text-sm text-slate-500">No assets uploaded yet.</p>
-                )}
-              </div>
+                  <span className="text-xs px-2.5 py-1 bg-emerald-100 text-emerald-700 rounded-full font-medium">Verified PDF</span>
+                </div>
+              ))}
             </div>
-          </div>
-        );
-      case 'answerBank':
-        return (
-          <div className="space-y-4">
-            <p className="text-sm text-slate-500 mb-4">Store reusable answers here. The AI will use these to answer custom questions on applications dynamically.</p>
-            {renderInput('answerBank', 'tellUsAboutYourself', 'Tell us about yourself', 'textarea')}
-            {renderInput('answerBank', 'whyThisCompany', 'Why do you want to work for this company?', 'textarea')}
-            {renderInput('answerBank', 'biggestAchievement', 'What is your biggest professional achievement?', 'textarea')}
-            {renderInput('answerBank', 'conflict', 'Describe a time you had a conflict at work and how you resolved it.', 'textarea')}
-          </div>
-        );
-      case 'workAuthorization':
-        return (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {renderInput('workAuthorization', 'country', 'Country of Authorization')}
-            {renderInput('workAuthorization', 'citizen', 'Are you a citizen?', 'checkbox')}
-            {renderInput('workAuthorization', 'needSponsorship', 'Do you require sponsorship?', 'checkbox')}
-            {renderInput('workAuthorization', 'visaType', 'Visa Type (if applicable)')}
-          </div>
-        );
-      default:
-        return (
-          <div className="text-center py-12 text-slate-500">
-            <p>This section is currently being expanded.</p>
-            <p className="text-sm mt-2">Check back soon for {SECTIONS.find(s => s.id === activeSection)?.title} settings.</p>
-          </div>
-        );
+          )}
+        </div>
+      );
     }
+
+    if (activeSection === 'answerBank') {
+      return (
+        <div className="space-y-4">
+          <p className="text-sm text-slate-500 mb-4">Store reusable answers here. AI Question Engine uses these to fill open behavioral prompts dynamically.</p>
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
+            <label className="text-sm font-bold text-slate-800 block">Tell us about yourself</label>
+            <textarea
+              value={formData.answerBank?.tellUsAboutYourself || ''}
+              onChange={(e) => handleFieldChange('answerBank.tellUsAboutYourself', e.target.value)}
+              rows={3}
+              className="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+            />
+          </div>
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
+            <label className="text-sm font-bold text-slate-800 block">Biggest Professional Achievement</label>
+            <textarea
+              value={formData.answerBank?.biggestAchievement || ''}
+              onChange={(e) => handleFieldChange('answerBank.biggestAchievement', e.target.value)}
+              rows={3}
+              className="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+            />
+          </div>
+        </div>
+      );
+    }
+
+    const sectionFields = registry.filter(f => f.section === activeSection);
+    const standardFields = sectionFields.filter(f => !f.shouldBeAdvanced);
+    const advancedFields = sectionFields.filter(f => f.shouldBeAdvanced);
+
+    return (
+      <div className="space-y-4">
+        {standardFields.map(renderField)}
+
+        {advancedFields.length > 0 && (
+          <div className="mt-6 border-t border-slate-200 pt-4">
+            <button
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="flex items-center gap-2 text-sm font-bold text-indigo-600 hover:text-indigo-700 mb-4"
+            >
+              {showAdvanced ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              {showAdvanced ? 'Hide Defense & Advanced Fields' : `Show Advanced & Security Fields (${advancedFields.length})`}
+            </button>
+            {showAdvanced && advancedFields.map(renderField)}
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -288,28 +285,28 @@ export default function ProfilePage() {
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
             <input 
               type="text" 
-              placeholder="Search sections..." 
+              placeholder="Search registry..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+              className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
             />
           </div>
         </div>
         
         <div className="flex-1 overflow-y-auto py-2">
-          {SECTIONS.filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase())).map((section) => {
-            const Icon = section.icon;
-            const isActive = activeSection === section.id;
+          {SECTION_METADATA.filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase())).map((sec) => {
+            const Icon = sec.icon;
+            const isActive = activeSection === sec.id;
             return (
               <button
-                key={section.id}
-                onClick={() => setActiveSection(section.id)}
+                key={sec.id}
+                onClick={() => setActiveSection(sec.id)}
                 className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors ${
-                  isActive ? 'bg-primary-50 text-primary-700 font-semibold border-r-4 border-primary-600' : 'text-slate-600 hover:bg-slate-50'
+                  isActive ? 'bg-indigo-50 text-indigo-700 font-semibold border-r-4 border-indigo-600' : 'text-slate-600 hover:bg-slate-50'
                 }`}
               >
-                <Icon className={`h-4 w-4 ${isActive ? 'text-primary-600' : 'text-slate-400'}`} />
-                {section.title}
+                <Icon className={`h-4 w-4 ${isActive ? 'text-indigo-600' : 'text-slate-400'}`} />
+                {sec.title}
               </button>
             );
           })}
@@ -318,29 +315,31 @@ export default function ProfilePage() {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden h-full">
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white z-10">
+        {/* Header with ATS Readiness */}
+        <div className="px-6 py-4 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between bg-white z-10 gap-4">
           <div>
             <h2 className="text-xl font-bold text-slate-800">
-              {SECTIONS.find(s => s.id === activeSection)?.title}
+              {SECTION_METADATA.find(s => s.id === activeSection)?.title}
             </h2>
-            <p className="text-sm text-slate-500 mt-1">Changes are saved automatically.</p>
+            <p className="text-xs text-slate-500 mt-0.5">Metadata-driven ATS registry inputs.</p>
           </div>
-          
+
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-3">
               <div className="text-right">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Completeness</p>
-                <p className="text-lg font-bold text-primary-600">{completeness.overall}%</p>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">ATS Readiness</p>
+                <p className="text-lg font-bold text-indigo-600">{readiness.overallScore || 0}%</p>
               </div>
-              <div className="w-12 h-12 rounded-full border-4 border-slate-100 flex items-center justify-center relative">
-                <svg className="absolute inset-0 w-full h-full -rotate-90">
-                  <circle cx="24" cy="24" r="20" className="stroke-slate-100" strokeWidth="4" fill="none" />
-                  <circle cx="24" cy="24" r="20" className="stroke-primary-500 transition-all duration-1000" strokeWidth="4" fill="none" strokeDasharray="125.6" strokeDashoffset={125.6 - (125.6 * completeness.overall) / 100} />
-                </svg>
+              <div className="flex items-center gap-1.5">
+                {Object.entries(readiness.atsBreakdown || {}).map(([ats, score]) => (
+                  <div key={ats} className="text-center px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg" title={`${ats} Compatibility Score`}>
+                    <p className="text-[9px] font-semibold text-slate-500">{ats}</p>
+                    <p className={`text-xs font-bold ${score >= 90 ? 'text-emerald-600' : 'text-amber-600'}`}>{score}%</p>
+                  </div>
+                ))}
               </div>
             </div>
-            
+
             <div className={`flex items-center gap-2 text-sm font-medium px-3 py-1.5 rounded-full ${
               saveStatus === 'saved' ? 'bg-emerald-50 text-emerald-600' : 
               saveStatus === 'saving' ? 'bg-amber-50 text-amber-600' : 'bg-red-50 text-red-600'
