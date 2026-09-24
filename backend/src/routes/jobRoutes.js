@@ -1,5 +1,5 @@
 const express = require('express');
-const { getJobs, syncJobs, searchJobs, getSuggestions } = require('../controllers/jobController');
+const { getJobs, getJobById, syncJobs, searchJobs, getSuggestions } = require('../controllers/jobController');
 const { syncRateLimiter } = require('../middleware/rateLimiter');
 const { authenticate, authorize } = require('../middleware/auth');
 
@@ -34,11 +34,21 @@ router.get('/search', searchJobs);
 
 /**
  * @swagger
+ * /api/jobs/{id}:
+ *   get:
+ *     summary: Get a single job by its ID
+ *     tags: [Jobs]
+ */
+router.get('/:id', getJobById);
+
+/**
+ * @swagger
  * /api/jobs/sync:
  *   post:
  *     summary: Trigger manual synchronization across all ATS sources
  *     tags: [Jobs]
  */
 router.post('/sync', authenticate, authorize('ADMIN', 'SYSTEM'), syncRateLimiter, syncJobs);
+
 
 module.exports = router;

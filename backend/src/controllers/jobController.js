@@ -134,3 +134,16 @@ exports.getSuggestions = async (req, res, next) => {
     next(error);
   }
 };
+
+exports.getJobById = async (req, res, next) => {
+  try {
+    const job = await Job.findById(req.params.id).lean();
+    if (!job) {
+      return res.status(404).json({ success: false, message: 'Job not found' });
+    }
+    res.json({ success: true, data: job });
+  } catch (error) {
+    next(error);
+  }
+};
+

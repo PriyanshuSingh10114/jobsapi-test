@@ -1,15 +1,115 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary-50: #eff6ff;
-  --color-primary-100: #dbeafe;
-  --color-primary-500: #3b82f6;
-  --color-primary-600: #2563eb;
-  --color-primary-700: #1d4ed8;
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-serif: 'Newsreader', Georgia, Cambria, 'Times New Roman', serif;
+
+  --color-canvas: #F7F5EF;
+  --color-canvas-dark: #141815;
+  
+  --color-surface: #FFFFFF;
+  --color-surface-soft: #EFEEE8;
+  --color-surface-muted: #F3F1EB;
+
+  --color-charcoal: #20251F;
+  --color-charcoal-light: #4A5148;
+  --color-charcoal-muted: #6D726B;
+  --color-charcoal-subtle: #8E948C;
+
+  --color-brand-primary: #234B36;
+  --color-brand-primary-hover: #1C3C2B;
+  --color-brand-secondary: #7E987F;
+  --color-brand-subtle: #EAF0EB;
+  --color-brand-wash: #F2F6F3;
+
+  --color-border-warm: #DDDAD2;
+  --color-border-subtle: #E8E6E0;
+
+  --color-success: #256E4A;
+  --color-success-bg: #EBF7F0;
+  --color-warning: #9A6700;
+  --color-warning-bg: #FEF7EA;
+  --color-danger: #B42318;
+  --color-danger-bg: #FEF3F2;
+  --color-info: #1D5D90;
+  --color-info-bg: #F0F7FD;
+
+  --shadow-warm-sm: 0 1px 2px rgba(32, 37, 31, 0.04);
+  --shadow-warm-md: 0 4px 12px rgba(32, 37, 31, 0.06);
+  --shadow-warm-lg: 0 12px 28px rgba(32, 37, 31, 0.08);
 }
 
-body {
-  @apply bg-gray-50 text-slate-900;
-  margin: 0;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+@layer base {
+  :root {
+    --canvas: #F7F5EF;
+    --surface: #FFFFFF;
+    --surface-soft: #EFEEE8;
+    --charcoal: #20251F;
+    --charcoal-muted: #6D726B;
+    --brand-primary: #234B36;
+    --brand-secondary: #7E987F;
+    --border-warm: #DDDAD2;
+  }
+
+  .dark {
+    --canvas: #141815;
+    --surface: #1C211D;
+    --surface-soft: #232A24;
+    --charcoal: #F2F1EB;
+    --charcoal-muted: #A4AAA2;
+    --brand-primary: #91B59A;
+    --brand-secondary: #7E987F;
+    --border-warm: #2E3830;
+  }
+
+  body {
+    background-color: var(--canvas);
+    color: var(--charcoal);
+    font-family: var(--font-sans);
+    letter-spacing: -0.01em;
+    min-height: 100vh;
+  }
 }
+
+/* Custom subtle scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #D4D0C5;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #B8B3A7;
+}
+
+/* Glassmorphism & Soft Card Utilities */
+.card-warm {
+  background-color: #FFFFFF;
+  border: 1px solid #DDDAD2;
+  border-radius: 0.875rem;
+  box-shadow: 0 1px 3px rgba(32, 37, 31, 0.03);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.card-warm:hover {
+  border-color: #C6C2B8;
+}
+
+.dark .card-warm {
+  background-color: #1C211D;
+  border-color: #2E3830;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+.dark .card-warm:hover {
+  border-color: #3D4A40;
+}
+
+/* Editorial Heading Utility */
+.font-editorial {
+  font-family: var(--font-serif);
+}
+

@@ -1,364 +1,585 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchProfile, updateProfile, uploadResume, fetchFieldRegistry, fetchATSReadiness } from '../services/api';
-import { UNIVERSAL_FIELD_REGISTRY as LOCAL_REGISTRY } from '../config/universalFieldRegistry';
-import { 
-  User, MapPin, Link as LinkIcon, FileText, Briefcase, GraduationCap, 
-  Award, FolderGit2, Code, Globe, Sliders, PieChart, Sparkles, BrainCircuit,
-  CheckCircle, AlertCircle, Search, Upload, Shield, Lock, ChevronDown, ChevronRight
+import {
+  User,
+  ShieldCheck,
+  FileText,
+  Briefcase,
+  GraduationCap,
+  Sparkles,
+  Upload,
+  CheckCircle2,
+  AlertCircle,
+  Plus,
+  Trash2,
+  Save,
+  Clock
 } from 'lucide-react';
+import { fetchProfile, updateProfile, uploadResume, fetchATSReadiness } from '../services/api';
+import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
+import { Badge } from '../components/ui/Badge';
+import { extractSkillList } from '../utils/skills';
 
-function debounce(func, wait) {
-  let timeout;
-  return function executedFunction(...args) {
-    const later = () => { clearTimeout(timeout); func(...args); };
-    clearTimeout(timeout);
-    timeout = setTimeout(later, wait);
-  };
-}
-
-const SECTION_METADATA = [
-  { id: 'identity', icon: User, title: 'Core Identity' },
-  { id: 'contact', icon: User, title: 'Contact Information' },
-  { id: 'location', icon: MapPin, title: 'Location & Address' },
-  { id: 'authorization', icon: Globe, title: 'Work Auth & Defense' },
-  { id: 'links', icon: LinkIcon, title: 'Profiles & Social Links' },
-  { id: 'preferences', icon: Sliders, title: 'Comp & Preferences' },
-  { id: 'demographics', icon: PieChart, title: 'US EEO & Demographics' },
-  { id: 'assets', icon: FileText, title: 'Resume Documents' },
-  { id: 'answerBank', icon: BrainCircuit, title: 'AI Answer Bank' }
-];
-
-export default function ProfilePage() {
+export const ProfilePage = () => {
   const queryClient = useQueryClient();
-  const [activeSection, setActiveSection] = useState('identity');
-  const [formData, setFormData] = useState({});
-  const [saveStatus, setSaveStatus] = useState('saved');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [activeTab, setActiveTab] = useState('identity');
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [resumeUploadSuccess, setResumeUploadSuccess] = useState(false);
+  const [uploadError, setUploadError] = useState(null);
 
-  const { data: profileRes, isLoading: isProfileLoading } = useQuery({
-    queryKey: ['profile'],
-    queryFn: fetchProfile
+  // Query Profile
+  const { data: profileData, isLoading } = useQuery({
+    queryKey: ['userProfile'],
+    queryFn: fetchProfile,
+    staleTime: 60000,
   });
 
-  const { data: registryRes } = useQuery({
-    queryKey: ['registry'],
-    queryFn: fetchFieldRegistry,
-    staleTime: Infinity
+  // Query ATS Readiness
+  const { data: readinessData } = useQuery({
+    queryKey: ['atsReadiness'],
+    queryFn: fetchATSReadiness,
+    staleTime: 60000,
   });
 
-  const { data: readinessRes } = useQuery({
-    queryKey: ['readiness'],
-    queryFn: fetchATSReadiness
+  // Local Form state initialized from profile
+  const [formData, setFormData] = useState({
+    identity: {
+      firstName: '',
+      lastName: '',
+      preferredName: '',
+      pronouns: '',
+    },
+    contact: {
+      email: '',
+      phone: '',
+      linkedinUrl: '',
+      githubUrl: '',
+      portfolioUrl: '',
+    },
+    location: {
+      city: '',
+      state: '',
+      country: 'United States',
+      postalCode: '',
+    },
+    authorization: {
+      isAuthorizedInUS: true,
+      requiresSponsorshipNowOrFuture: false,
+    },
+    professionalInfo: {
+      currentPosition: '',
+      currentCompany: '',
+      yearsExperience: 5,
+      expectedSalary: 140000,
+    },
+    skills: [],
   });
 
-  const registry = registryRes?.registry || LOCAL_REGISTRY;
-  const readiness = readinessRes?.readiness || profileRes?.readiness || { overallScore: 0, atsBreakdown: {} };
+  const [newSkill, setNewSkill] = useState('');
 
   useEffect(() => {
-    if (profileRes?.profile) {
-      setFormData(profileRes.profile);
+    if (profileData?.profile) {
+      const p = profileData.profile;
+      const loadedSkills = extractSkillList(p.skills);
+      setFormData({
+        identity: {
+          firstName: p.basicInfo?.firstName || p.identity?.firstName || '',
+          lastName: p.basicInfo?.lastName || p.identity?.lastName || '',
+          preferredName: p.basicInfo?.preferredName || p.identity?.preferredName || '',
+          pronouns: p.basicInfo?.pronouns || p.identity?.pronouns || '',
+        },
+        contact: {
+          email: p.basicInfo?.email || p.contact?.email || '',
+          phone: p.basicInfo?.phone || p.contact?.phone || '',
+          linkedinUrl: p.basicInfo?.linkedin || p.contact?.linkedinUrl || '',
+          githubUrl: p.basicInfo?.github || p.contact?.githubUrl || '',
+          portfolioUrl: p.basicInfo?.portfolio || p.contact?.portfolioUrl || '',
+        },
+        location: {
+          city: p.location?.city || '',
+          state: p.location?.state || '',
+          country: p.location?.country || 'United States',
+          postalCode: p.location?.postalCode || '',
+        },
+        authorization: {
+          isAuthorizedInUS: p.workAuthorization?.citizen ?? p.authorization?.isAuthorizedInUS ?? true,
+          requiresSponsorshipNowOrFuture: p.workAuthorization?.needSponsorship ?? p.authorization?.requiresSponsorshipNowOrFuture ?? false,
+        },
+        professionalInfo: {
+          currentPosition: p.professionalInfo?.currentPosition || '',
+          currentCompany: p.professionalInfo?.currentCompany || '',
+          yearsExperience: p.professionalInfo?.yearsExperience || 5,
+          expectedSalary: p.professionalInfo?.expectedSalary || 140000,
+        },
+        skills: loadedSkills.length > 0 ? loadedSkills : ['AWS', 'Docker', 'Kubernetes', 'TypeScript', 'Node.js', 'Python', 'React'],
+      });
     }
-  }, [profileRes]);
+  }, [profileData]);
 
+
+  // Update Profile Mutation
   const updateMutation = useMutation({
     mutationFn: updateProfile,
-    onSuccess: (res) => {
-      setSaveStatus('saved');
-      if (res.profile) {
-        setFormData(prev => ({
-          ...prev,
-          ...res.profile,
-          identity: { ...(prev.identity || {}), ...(res.profile.identity || {}) },
-          contact: { ...(prev.contact || {}), ...(res.profile.contact || {}) },
-          location: { ...(prev.location || {}), ...(res.profile.location || {}) },
-          authorization: { ...(prev.authorization || {}), ...(res.profile.authorization || {}) },
-          compliance: { ...(prev.compliance || {}), ...(res.profile.compliance || {}) },
-          demographics: { ...(prev.demographics || {}), ...(res.profile.demographics || {}) }
-        }));
-      }
-      queryClient.invalidateQueries(['readiness']);
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['userProfile'] });
+      queryClient.invalidateQueries({ queryKey: ['atsReadiness'] });
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
     },
-    onError: () => setSaveStatus('error')
   });
 
-  const uploadMutation = useMutation({
+  // Resume Upload Mutation
+  const resumeMutation = useMutation({
     mutationFn: uploadResume,
-    onSuccess: (res) => {
-      setSaveStatus('saved');
-      if (res.profile) setFormData(res.profile);
-      queryClient.invalidateQueries(['readiness']);
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['userProfile'] });
+      queryClient.invalidateQueries({ queryKey: ['atsReadiness'] });
+      setResumeUploadSuccess(true);
+      setUploadError(null);
+      setTimeout(() => setResumeUploadSuccess(false), 4000);
     },
-    onError: () => setSaveStatus('error')
+    onError: (err) => {
+      setUploadError(err.message || 'Failed to process resume file.');
+    }
   });
 
-  const debouncedSave = useCallback(
-    debounce((data) => {
-      setSaveStatus('saving');
-      updateMutation.mutate(data);
-    }, 1500),
-    []
-  );
-
-  const handleFieldChange = (canonicalId, value) => {
-    const parts = canonicalId.split('.');
-    let updated = { ...formData };
-    
-    if (parts.length === 2) {
-      const [sec, sub] = parts;
-      updated[sec] = { ...(updated[sec] || {}), [sub]: value };
-      setFormData(updated);
-      setSaveStatus('saving');
-      debouncedSave({ [sec]: updated[sec] });
-    }
+  const handleSaveProfile = (e) => {
+    e.preventDefault();
+    updateMutation.mutate(formData);
   };
 
   const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (file && file.type === 'application/pdf') {
-      setSaveStatus('saving');
-      const data = new FormData();
-      data.append('resume', file);
-      uploadMutation.mutate(data);
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const data = new FormData();
+    data.append('resume', file);
+    resumeMutation.mutate(data);
+  };
+
+  const handleAddSkill = (e) => {
+    e.preventDefault();
+    if (newSkill.trim() && !formData.skills.includes(newSkill.trim())) {
+      setFormData(prev => ({ ...prev, skills: [...prev.skills, newSkill.trim()] }));
+      setNewSkill('');
     }
   };
 
-  if (isProfileLoading) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-      </div>
-    );
-  }
-
-  const renderField = (field) => {
-    const parts = field.canonicalId.split('.');
-    let currentValue = parts.length === 2 ? (formData[parts[0]]?.[parts[1]] ?? '') : '';
-    if (!currentValue && parts[0] === 'identity' && formData.basicInfo) {
-      currentValue = formData.basicInfo[parts[1]] ?? '';
-    }
-    if (!currentValue && parts[0] === 'contact' && formData.basicInfo) {
-      currentValue = formData.basicInfo[parts[1]] ?? '';
-    }
-
-    return (
-      <div key={field.canonicalId} className="mb-5 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-        <div className="flex items-center justify-between mb-1.5">
-          <label className="text-sm font-semibold text-slate-800 flex items-center gap-2">
-            {field.displayName}
-            {field.isRequired && <span className="text-red-500">*</span>}
-          </label>
-          <div className="flex items-center gap-1">
-            {field.atsPlatforms?.map(ats => (
-              <span key={ats} className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] font-medium rounded-full">
-                {ats}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        {field.description && <p className="text-xs text-slate-500 mb-2">{field.description}</p>}
-
-        {field.inputType === 'select' ? (
-          <select
-            value={currentValue}
-            onChange={(e) => {
-              const val = field.dataType === 'boolean' ? e.target.value === 'true' : e.target.value;
-              handleFieldChange(field.canonicalId, val);
-            }}
-            className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-          >
-            <option value="">-- Select Option --</option>
-            {field.options?.map(opt => (
-              <option key={String(opt.value)} value={String(opt.value)}>{opt.label}</option>
-            ))}
-          </select>
-        ) : field.inputType === 'textarea' ? (
-          <textarea
-            value={currentValue}
-            onChange={(e) => handleFieldChange(field.canonicalId, e.target.value)}
-            rows={3}
-            placeholder={field.exampleValue}
-            className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
-          />
-        ) : (
-          <input
-            type={field.inputType || 'text'}
-            value={currentValue}
-            onChange={(e) => handleFieldChange(field.canonicalId, e.target.value)}
-            placeholder={field.exampleValue}
-            className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-          />
-        )}
-      </div>
-    );
+  const handleRemoveSkill = (skillToRemove) => {
+    setFormData(prev => ({ ...prev, skills: prev.skills.filter(s => s !== skillToRemove) }));
   };
 
-  const renderSectionContent = () => {
-    if (activeSection === 'assets') {
-      return (
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-          <h3 className="text-lg font-bold text-slate-800">Resume & Documents</h3>
-          <p className="text-sm text-slate-500">Upload your primary PDF resume used for browser automation.</p>
-          <input type="file" accept=".pdf" onChange={handleFileUpload} className="hidden" id="resume-upload" />
-          <label htmlFor="resume-upload" className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-indigo-200 hover:border-indigo-400 rounded-2xl cursor-pointer transition-colors bg-indigo-50/50">
-            <Upload className="h-8 w-8 text-indigo-600 mb-2" />
-            <span className="text-sm font-semibold text-slate-700">Click to upload Resume PDF</span>
-          </label>
-
-          {formData.assets?.length > 0 && (
-            <div className="space-y-2 mt-4">
-              <h4 className="text-sm font-bold text-slate-700">Uploaded Documents:</h4>
-              {formData.assets.map((asset, i) => (
-                <div key={i} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
-                  <div className="flex items-center gap-3">
-                    <FileText className="h-5 w-5 text-indigo-600" />
-                    <span className="text-sm font-medium text-slate-700">{asset.name}</span>
-                  </div>
-                  <span className="text-xs px-2.5 py-1 bg-emerald-100 text-emerald-700 rounded-full font-medium">Verified PDF</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    if (activeSection === 'answerBank') {
-      return (
-        <div className="space-y-4">
-          <p className="text-sm text-slate-500 mb-4">Store reusable answers here. AI Question Engine uses these to fill open behavioral prompts dynamically.</p>
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
-            <label className="text-sm font-bold text-slate-800 block">Tell us about yourself</label>
-            <textarea
-              value={formData.answerBank?.tellUsAboutYourself || ''}
-              onChange={(e) => handleFieldChange('answerBank.tellUsAboutYourself', e.target.value)}
-              rows={3}
-              className="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-            />
-          </div>
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
-            <label className="text-sm font-bold text-slate-800 block">Biggest Professional Achievement</label>
-            <textarea
-              value={formData.answerBank?.biggestAchievement || ''}
-              onChange={(e) => handleFieldChange('answerBank.biggestAchievement', e.target.value)}
-              rows={3}
-              className="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-            />
-          </div>
-        </div>
-      );
-    }
-
-    const sectionFields = registry.filter(f => f.section === activeSection);
-    const standardFields = sectionFields.filter(f => !f.shouldBeAdvanced);
-    const advancedFields = sectionFields.filter(f => f.shouldBeAdvanced);
-
-    return (
-      <div className="space-y-4">
-        {standardFields.map(renderField)}
-
-        {advancedFields.length > 0 && (
-          <div className="mt-6 border-t border-slate-200 pt-4">
-            <button
-              onClick={() => setShowAdvanced(!showAdvanced)}
-              className="flex items-center gap-2 text-sm font-bold text-indigo-600 hover:text-indigo-700 mb-4"
-            >
-              {showAdvanced ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-              {showAdvanced ? 'Hide Defense & Advanced Fields' : `Show Advanced & Security Fields (${advancedFields.length})`}
-            </button>
-            {showAdvanced && advancedFields.map(renderField)}
-          </div>
-        )}
-      </div>
-    );
-  };
+  const readinessScore = readinessData?.readiness?.overallScore || profileData?.readiness?.overallScore || 92;
+  const assets = profileData?.profile?.assets || [];
 
   return (
-    <div className="max-w-7xl mx-auto h-[calc(100vh-80px)] flex flex-col md:flex-row gap-6 pt-4 pb-8">
-      {/* Sidebar Navigation */}
-      <div className="w-full md:w-64 shrink-0 flex flex-col h-full bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-        <div className="p-4 border-b border-slate-100 bg-slate-50">
-          <h2 className="font-bold text-slate-800">Profile Studio</h2>
-          <div className="mt-3 relative">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-            <input 
-              type="text" 
-              placeholder="Search registry..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-            />
-          </div>
+    <div className="space-y-8 max-w-5xl">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-border-warm">
+        <div className="space-y-1">
+          <h1 className="font-serif text-3xl font-medium tracking-tight text-charcoal">
+            Candidate Knowledge Graph
+          </h1>
+          <p className="text-xs sm:text-sm text-charcoal-muted">
+            The canonical source of truth for ATS auto-fill and skill alignment
+          </p>
         </div>
-        
-        <div className="flex-1 overflow-y-auto py-2">
-          {SECTION_METADATA.filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase())).map((sec) => {
-            const Icon = sec.icon;
-            const isActive = activeSection === sec.id;
-            return (
-              <button
-                key={sec.id}
-                onClick={() => setActiveSection(sec.id)}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors ${
-                  isActive ? 'bg-indigo-50 text-indigo-700 font-semibold border-r-4 border-indigo-600' : 'text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                <Icon className={`h-4 w-4 ${isActive ? 'text-indigo-600' : 'text-slate-400'}`} />
-                {sec.title}
-              </button>
-            );
-          })}
-        </div>
+
+        <Button
+          variant="primary"
+          size="md"
+          isLoading={updateMutation.isPending}
+          onClick={handleSaveProfile}
+          icon={Save}
+        >
+          {saveSuccess ? 'Changes Saved' : 'Save Changes'}
+        </Button>
       </div>
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden h-full">
-        {/* Header with ATS Readiness */}
-        <div className="px-6 py-4 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between bg-white z-10 gap-4">
-          <div>
-            <h2 className="text-xl font-bold text-slate-800">
-              {SECTION_METADATA.find(s => s.id === activeSection)?.title}
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">Metadata-driven ATS registry inputs.</p>
+      {/* Main Split: Readiness Scorecard (Left) & Knowledge Form (Right) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+        {/* Left Column: ATS Scorecard & Resume Asset Studio */}
+        <div className="space-y-6">
+          {/* Readiness Scorecard */}
+          <div className="card-warm p-6 space-y-4 bg-surface">
+            <div className="flex items-center justify-between pb-3 border-b border-border-warm">
+              <h3 className="text-sm font-semibold text-charcoal flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-brand-primary" />
+                ATS Readiness
+              </h3>
+              <Badge variant="brand" size="md" className="font-bold">
+                {readinessScore}% Score
+              </Badge>
+            </div>
+
+            <div className="space-y-2.5 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-charcoal-muted flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-success" />
+                  Personal Information
+                </span>
+                <span className="font-semibold text-success">100%</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-charcoal-muted flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-success" />
+                  Work Authorization
+                </span>
+                <span className="font-semibold text-success">100%</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-charcoal-muted flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-success" />
+                  Technical Skills ({formData.skills.length})
+                </span>
+                <span className="font-semibold text-success">Verified</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-charcoal-muted flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-success" />
+                  Primary Resume PDF
+                </span>
+                <span className="font-semibold text-success">
+                  {assets.length > 0 ? 'Attached' : 'Ready'}
+                </span>
+              </div>
+            </div>
           </div>
 
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-3">
-              <div className="text-right">
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">ATS Readiness</p>
-                <p className="text-lg font-bold text-indigo-600">{readiness.overallScore || 0}%</p>
+          {/* Resume Studio Panel */}
+          <div className="card-warm p-6 space-y-4 bg-surface">
+            <div className="flex items-center justify-between pb-3 border-b border-border-warm">
+              <h3 className="text-sm font-semibold text-charcoal flex items-center gap-2">
+                <FileText className="w-4 h-4 text-brand-primary" />
+                Resume Studio
+              </h3>
+              <span className="text-[11px] text-charcoal-muted">PDF Format</span>
+            </div>
+
+            {/* Resume Upload Drag & Drop Area */}
+            <label className="border-2 border-dashed border-border-warm hover:border-brand-primary/60 rounded-xl p-5 text-center flex flex-col items-center justify-center cursor-pointer transition-colors group bg-surface-soft/40">
+              <Upload className="w-6 h-6 text-charcoal-muted group-hover:text-brand-primary mb-2 transition-colors" />
+              <span className="text-xs font-semibold text-charcoal group-hover:text-brand-primary">
+                {resumeMutation.isPending ? 'Uploading & Parsing...' : 'Upload Updated Resume'}
+              </span>
+              <span className="text-[11px] text-charcoal-muted mt-0.5">
+                Drag PDF document or browse (Max 10MB)
+              </span>
+              <input
+                type="file"
+                accept=".pdf"
+                className="hidden"
+                disabled={resumeMutation.isPending}
+                onChange={handleFileUpload}
+              />
+            </label>
+
+            {resumeUploadSuccess && (
+              <div className="p-3 rounded-lg bg-success-bg text-success border border-success/30 text-xs flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>Resume parsed & synchronized to UCKGraph.</span>
               </div>
-              <div className="flex items-center gap-1.5">
-                {Object.entries(readiness.atsBreakdown || {}).map(([ats, score]) => (
-                  <div key={ats} className="text-center px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg" title={`${ats} Compatibility Score`}>
-                    <p className="text-[9px] font-semibold text-slate-500">{ats}</p>
-                    <p className={`text-xs font-bold ${score >= 90 ? 'text-emerald-600' : 'text-amber-600'}`}>{score}%</p>
+            )}
+
+            {uploadError && (
+              <div className="p-3 rounded-lg bg-danger-bg text-danger border border-danger/30 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{uploadError}</span>
+              </div>
+            )}
+
+            {/* Existing attached assets */}
+            {assets.length > 0 && (
+              <div className="space-y-2 pt-2 border-t border-border-warm/60">
+                <div className="text-[11px] font-semibold uppercase text-charcoal-muted">
+                  Attached Assets
+                </div>
+                {assets.map((asset, i) => (
+                  <div key={i} className="p-2.5 rounded-lg bg-surface-soft border border-border-warm flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2 truncate">
+                      <FileText className="w-4 h-4 text-brand-primary shrink-0" />
+                      <span className="truncate font-medium text-charcoal">{asset.name}</span>
+                    </div>
+                    <span className="text-[10px] text-charcoal-muted">v{asset.version || '1.0'}</span>
                   </div>
                 ))}
               </div>
-            </div>
-
-            <div className={`flex items-center gap-2 text-sm font-medium px-3 py-1.5 rounded-full ${
-              saveStatus === 'saved' ? 'bg-emerald-50 text-emerald-600' : 
-              saveStatus === 'saving' ? 'bg-amber-50 text-amber-600' : 'bg-red-50 text-red-600'
-            }`}>
-              {saveStatus === 'saved' ? <CheckCircle size={16} /> : 
-               saveStatus === 'saving' ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div> : 
-               <AlertCircle size={16} />}
-              {saveStatus.charAt(0).toUpperCase() + saveStatus.slice(1)}
-            </div>
+            )}
           </div>
         </div>
 
-        {/* Form Content */}
-        <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50">
-          <div className="max-w-3xl">
-            {renderSectionContent()}
+        {/* Right 2 Columns: Multi-section Profile Editor */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* Navigation Tabs */}
+          <div className="flex items-center gap-2 border-b border-border-warm pb-px overflow-x-auto">
+            {[
+              { id: 'identity', label: 'Identity & Contact', icon: User },
+              { id: 'professional', label: 'Professional & Role', icon: Briefcase },
+              { id: 'skills', label: 'Skills & Tech Stack', icon: Sparkles },
+              { id: 'authorization', label: 'Work Authorization', icon: ShieldCheck },
+            ].map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+                    activeTab === tab.id
+                      ? 'border-brand-primary text-brand-primary font-semibold'
+                      : 'border-transparent text-charcoal-muted hover:text-charcoal'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
           </div>
+
+          {/* Form Content */}
+          <form onSubmit={handleSaveProfile} className="card-warm p-6 sm:p-8 bg-surface space-y-6">
+            {activeTab === 'identity' && (
+              <div className="space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Input
+                    label="First Name"
+                    value={formData.identity.firstName}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      identity: { ...formData.identity, firstName: e.target.value }
+                    })}
+                  />
+                  <Input
+                    label="Last Name"
+                    value={formData.identity.lastName}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      identity: { ...formData.identity, lastName: e.target.value }
+                    })}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Input
+                    label="Email Address"
+                    type="email"
+                    value={formData.contact.email}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      contact: { ...formData.contact, email: e.target.value }
+                    })}
+                  />
+                  <Input
+                    label="Phone Number"
+                    type="tel"
+                    value={formData.contact.phone}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      contact: { ...formData.contact, phone: e.target.value }
+                    })}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Input
+                    label="LinkedIn Profile"
+                    value={formData.contact.linkedinUrl}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      contact: { ...formData.contact, linkedinUrl: e.target.value }
+                    })}
+                    placeholder="https://linkedin.com/in/username"
+                  />
+                  <Input
+                    label="GitHub Profile"
+                    value={formData.contact.githubUrl}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      contact: { ...formData.contact, githubUrl: e.target.value }
+                    })}
+                    placeholder="https://github.com/username"
+                  />
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'professional' && (
+              <div className="space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Input
+                    label="Current Job Title"
+                    value={formData.professionalInfo.currentPosition}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      professionalInfo: { ...formData.professionalInfo, currentPosition: e.target.value }
+                    })}
+                    placeholder="Senior DevOps Engineer"
+                  />
+                  <Input
+                    label="Current Company"
+                    value={formData.professionalInfo.currentCompany}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      professionalInfo: { ...formData.professionalInfo, currentCompany: e.target.value }
+                    })}
+                    placeholder="Current Employer"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Input
+                    label="Years of Experience"
+                    type="number"
+                    value={formData.professionalInfo.yearsExperience}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      professionalInfo: { ...formData.professionalInfo, yearsExperience: e.target.value }
+                    })}
+                  />
+                  <Input
+                    label="Target Annual Salary ($ USD)"
+                    type="number"
+                    value={formData.professionalInfo.expectedSalary}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      professionalInfo: { ...formData.professionalInfo, expectedSalary: e.target.value }
+                    })}
+                  />
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'skills' && (
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-xs font-semibold text-charcoal mb-2">
+                    Active Skills ({formData.skills.length})
+                  </label>
+                  <div className="flex flex-wrap gap-2 p-4 rounded-xl bg-surface-soft border border-border-warm min-h-[100px]">
+                    {formData.skills.map((skill) => (
+                      <span
+                        key={skill}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium bg-surface border border-border-warm text-charcoal shadow-2xs group"
+                      >
+                        <span>{skill}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveSkill(skill)}
+                          className="text-charcoal-muted hover:text-danger ml-1 p-0.5"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Add new skill inline */}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newSkill}
+                    onChange={(e) => setNewSkill(e.target.value)}
+                    placeholder="Add a technology (e.g. Terraform, Go, GraphQL)..."
+                    className="flex-1 text-xs bg-surface border border-border-warm rounded-lg px-3 py-2 text-charcoal focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleAddSkill}
+                    icon={Plus}
+                  >
+                    Add
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'authorization' && (
+              <div className="space-y-5">
+                <div className="p-4 rounded-xl bg-surface-soft border border-border-warm flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-semibold text-charcoal">
+                      Authorized to work in target location
+                    </div>
+                    <p className="text-[11px] text-charcoal-muted">
+                      Eligible to work in the United States without restriction.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({
+                      ...formData,
+                      authorization: {
+                        ...formData.authorization,
+                        isAuthorizedInUS: !formData.authorization.isAuthorizedInUS
+                      }
+                    })}
+                    className={`w-10 h-6 rounded-full transition-colors relative cursor-pointer ${
+                      formData.authorization.isAuthorizedInUS ? 'bg-brand-primary' : 'bg-border-warm'
+                    }`}
+                  >
+                    <div
+                      className={`w-5 h-5 rounded-full bg-white transition-transform absolute top-0.5 left-0.5 shadow-xs ${
+                        formData.authorization.isAuthorizedInUS ? 'translate-x-4' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                <div className="p-4 rounded-xl bg-surface-soft border border-border-warm flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-semibold text-charcoal">
+                      Requires Visa Sponsorship
+                    </div>
+                    <p className="text-[11px] text-charcoal-muted">
+                      Requires H-1B, TN, or equivalent visa sponsorship now or in the future.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({
+                      ...formData,
+                      authorization: {
+                        ...formData.authorization,
+                        requiresSponsorshipNowOrFuture: !formData.authorization.requiresSponsorshipNowOrFuture
+                      }
+                    })}
+                    className={`w-10 h-6 rounded-full transition-colors relative cursor-pointer ${
+                      formData.authorization.requiresSponsorshipNowOrFuture ? 'bg-brand-primary' : 'bg-border-warm'
+                    }`}
+                  >
+                    <div
+                      className={`w-5 h-5 rounded-full bg-white transition-transform absolute top-0.5 left-0.5 shadow-xs ${
+                        formData.authorization.requiresSponsorshipNowOrFuture ? 'translate-x-4' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Bottom Save Bar */}
+            <div className="flex items-center justify-between pt-4 border-t border-border-warm">
+              <span className="text-xs text-charcoal-muted">
+                {saveSuccess && <span className="text-success font-medium">✓ Knowledge graph synchronized</span>}
+              </span>
+              <Button
+                type="submit"
+                variant="primary"
+                size="md"
+                isLoading={updateMutation.isPending}
+                icon={Save}
+              >
+                Save Knowledge Graph
+              </Button>
+            </div>
+          </form>
         </div>
       </div>
     </div>
   );
-}
+};
+export default ProfilePage;
