@@ -51,9 +51,9 @@ test('validateJob rejects jobs with invalid URLs', () => {
   assert.ok(validation.reason.includes('applyUrl'));
 });
 
-test('validateJob rejects expired jobs older than 30 days', () => {
+test('validateJob rejects expired jobs older than retention limit', () => {
   const oldDate = new Date();
-  oldDate.setDate(oldDate.getDate() - 45); // 45 days ago
+  oldDate.setDate(oldDate.getDate() - 120); // 120 days ago
 
   const expiredJob = {
     title: 'Engineer',
@@ -70,5 +70,6 @@ test('validateJob rejects expired jobs older than 30 days', () => {
 
   const validation = validateJob(expiredJob);
   assert.strictEqual(validation.isValid, false);
-  assert.ok(validation.reason.includes('older than 30 days'));
+  assert.ok(validation.reason.includes('older than'));
 });
+

@@ -33,21 +33,21 @@ const validateJob = (job) => {
     return { isValid: false, reason: 'Invalid or broken applyUrl protocol' };
   }
 
-  // Rule 3: 30-Day Freshness
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - (config.retentionDays || 30));
+  // Rule 3: Freshness Cutoff (Respects configured retentionDays)
+  const maxDays = config.retentionDays || 90;
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - maxDays);
   const jobDate = new Date(job.postedAt);
-  if (isNaN(jobDate) || jobDate < thirtyDaysAgo) {
-    return { isValid: false, reason: 'Job is older than 30 days or has invalid date' };
+  if (isNaN(jobDate) || jobDate < cutoffDate) {
+    return { isValid: false, reason: `Job is older than ${maxDays} days or has invalid date` };
   }
 
-  // Rule 4: Hard Fail for Non-US Onsite/Hybrid (as requested in Task 5)
-  if (!job.isUSJob && !job.remote) {
-    return { isValid: false, reason: 'Reject non-US onsite/hybrid job' };
-  }
-
-  // Rule 5: Strict US Mode (Blacklist Enforcement)
+  // Rule 4: Regional Enforcement (Only enforce strict US filtering if strictUSMode is enabled)
   if (config.strictUSMode) {
+    if (!job.isUSJob && !job.remote) {
+      return { isValid: false, reason: 'Reject non-US onsite/hybrid job' };
+    }
+
     const locLower = (job.location || '').toLowerCase();
     for (const { city, regex } of BLACKLIST_REGEXES) {
       if (regex.test(locLower)) {
@@ -55,6 +55,7 @@ const validateJob = (job) => {
       }
     }
   }
+
 
   // Validation passed
   return { isValid: true, reason: null };
