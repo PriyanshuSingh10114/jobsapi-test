@@ -13,9 +13,23 @@ import {
   Plus,
   Trash2,
   Save,
-  Clock
+  HelpCircle,
+  Building2,
+  MapPin,
+  Calendar,
+  Layers,
+  Sliders
 } from 'lucide-react';
-import { fetchProfile, updateProfile, uploadResume, fetchATSReadiness } from '../services/api';
+import {
+  fetchCandidateProfile,
+  updateCandidateProfile,
+  uploadCandidateDocument,
+  fetchCandidateReadiness,
+  addExperience,
+  deleteExperience,
+  addEducation,
+  deleteEducation
+} from '../services/api';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
@@ -28,124 +42,156 @@ export const ProfilePage = () => {
   const [resumeUploadSuccess, setResumeUploadSuccess] = useState(false);
   const [uploadError, setUploadError] = useState(null);
 
+  // Experience modal/inline form
+  const [showAddExp, setShowAddExp] = useState(false);
+  const [newExp, setNewExp] = useState({
+    company: '',
+    title: '',
+    location: '',
+    startDate: '',
+    endDate: 'Present',
+    current: true,
+    description: ''
+  });
+
+  // Education modal/inline form
+  const [showAddEdu, setShowAddEdu] = useState(false);
+  const [newEdu, setNewEdu] = useState({
+    institution: '',
+    degree: '',
+    fieldOfStudy: '',
+    location: '',
+    endDate: ''
+  });
+
   // Query Profile
-  const { data: profileData, isLoading } = useQuery({
-    queryKey: ['userProfile'],
-    queryFn: fetchProfile,
+  const { data: profileResponse, isLoading } = useQuery({
+    queryKey: ['candidateProfile'],
+    queryFn: fetchCandidateProfile,
     staleTime: 60000,
   });
 
-  // Query ATS Readiness
-  const { data: readinessData } = useQuery({
-    queryKey: ['atsReadiness'],
-    queryFn: fetchATSReadiness,
-    staleTime: 60000,
-  });
+  const profile = profileResponse?.profile;
+  const readiness = profileResponse?.readiness;
 
-  // Local Form state initialized from profile
+  // Local Form state
   const [formData, setFormData] = useState({
     identity: {
       firstName: '',
+      middleName: '',
       lastName: '',
       preferredName: '',
-      pronouns: '',
-    },
-    contact: {
       email: '',
       phone: '',
+    },
+    location: {
+      addressLine1: '',
+      city: '',
+      state: '',
+      postalCode: '',
+      country: 'United States',
+    },
+    contact: {
       linkedinUrl: '',
       githubUrl: '',
       portfolioUrl: '',
+      personalWebsite: '',
     },
-    location: {
-      city: '',
-      state: '',
-      country: 'United States',
-      postalCode: '',
+    professionalProfile: {
+      currentTitle: '',
+      professionalSummary: '',
+      yearsOfExperience: 5,
+      skills: [],
     },
-    authorization: {
-      isAuthorizedInUS: true,
-      requiresSponsorshipNowOrFuture: false,
+    workAuthorization: {
+      authorizedToWorkInUS: true,
+      requiresSponsorshipNow: false,
+      requiresFutureSponsorship: false,
+      visaType: 'Citizen',
     },
-    professionalInfo: {
-      currentPosition: '',
-      currentCompany: '',
-      yearsExperience: 5,
-      expectedSalary: 140000,
-    },
-    skills: [],
+    preferences: {
+      desiredTitles: [],
+      minimumSalary: 140000,
+      workModes: ['remote'],
+      blockedCompanies: [],
+    }
   });
 
   const [newSkill, setNewSkill] = useState('');
 
   useEffect(() => {
-    if (profileData?.profile) {
-      const p = profileData.profile;
-      const loadedSkills = extractSkillList(p.skills);
+    if (profile) {
+      const skills = extractSkillList(profile.professionalProfile?.skills || profile.skills);
       setFormData({
         identity: {
-          firstName: p.basicInfo?.firstName || p.identity?.firstName || '',
-          lastName: p.basicInfo?.lastName || p.identity?.lastName || '',
-          preferredName: p.basicInfo?.preferredName || p.identity?.preferredName || '',
-          pronouns: p.basicInfo?.pronouns || p.identity?.pronouns || '',
-        },
-        contact: {
-          email: p.basicInfo?.email || p.contact?.email || '',
-          phone: p.basicInfo?.phone || p.contact?.phone || '',
-          linkedinUrl: p.basicInfo?.linkedin || p.contact?.linkedinUrl || '',
-          githubUrl: p.basicInfo?.github || p.contact?.githubUrl || '',
-          portfolioUrl: p.basicInfo?.portfolio || p.contact?.portfolioUrl || '',
+          firstName: profile.identity?.firstName || '',
+          middleName: profile.identity?.middleName || '',
+          lastName: profile.identity?.lastName || '',
+          preferredName: profile.identity?.preferredName || '',
+          email: profile.identity?.email || '',
+          phone: profile.identity?.phone || '',
         },
         location: {
-          city: p.location?.city || '',
-          state: p.location?.state || '',
-          country: p.location?.country || 'United States',
-          postalCode: p.location?.postalCode || '',
+          addressLine1: profile.location?.addressLine1 || '',
+          city: profile.location?.city || '',
+          state: profile.location?.state || '',
+          postalCode: profile.location?.postalCode || '',
+          country: profile.location?.country || 'United States',
         },
-        authorization: {
-          isAuthorizedInUS: p.workAuthorization?.citizen ?? p.authorization?.isAuthorizedInUS ?? true,
-          requiresSponsorshipNowOrFuture: p.workAuthorization?.needSponsorship ?? p.authorization?.requiresSponsorshipNowOrFuture ?? false,
+        contact: {
+          linkedinUrl: profile.contact?.linkedinUrl || '',
+          githubUrl: profile.contact?.githubUrl || '',
+          portfolioUrl: profile.contact?.portfolioUrl || '',
+          personalWebsite: profile.contact?.personalWebsite || '',
         },
-        professionalInfo: {
-          currentPosition: p.professionalInfo?.currentPosition || '',
-          currentCompany: p.professionalInfo?.currentCompany || '',
-          yearsExperience: p.professionalInfo?.yearsExperience || 5,
-          expectedSalary: p.professionalInfo?.expectedSalary || 140000,
+        professionalProfile: {
+          currentTitle: profile.professionalProfile?.currentTitle || '',
+          professionalSummary: profile.professionalProfile?.professionalSummary || '',
+          yearsOfExperience: profile.professionalProfile?.yearsOfExperience || 5,
+          skills: skills.length > 0 ? skills : ['AWS', 'Docker', 'Kubernetes', 'TypeScript', 'Node.js', 'Python', 'React'],
         },
-        skills: loadedSkills.length > 0 ? loadedSkills : ['AWS', 'Docker', 'Kubernetes', 'TypeScript', 'Node.js', 'Python', 'React'],
+        workAuthorization: {
+          authorizedToWorkInUS: profile.workAuthorization?.authorizedToWorkInUS ?? true,
+          requiresSponsorshipNow: profile.workAuthorization?.requiresSponsorshipNow ?? false,
+          requiresFutureSponsorship: profile.workAuthorization?.requiresFutureSponsorship ?? false,
+          visaType: profile.workAuthorization?.visaType || 'Citizen',
+        },
+        preferences: {
+          desiredTitles: profile.preferences?.desiredTitles || [],
+          minimumSalary: profile.preferences?.minimumSalary || 140000,
+          workModes: profile.preferences?.workModes || ['remote'],
+          blockedCompanies: profile.preferences?.blockedCompanies || [],
+        }
       });
     }
-  }, [profileData]);
+  }, [profile]);
 
-
-  // Update Profile Mutation
+  // Update Mutation
   const updateMutation = useMutation({
-    mutationFn: updateProfile,
+    mutationFn: updateCandidateProfile,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['userProfile'] });
-      queryClient.invalidateQueries({ queryKey: ['atsReadiness'] });
+      queryClient.invalidateQueries({ queryKey: ['candidateProfile'] });
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     },
   });
 
   // Resume Upload Mutation
-  const resumeMutation = useMutation({
-    mutationFn: uploadResume,
+  const documentMutation = useMutation({
+    mutationFn: uploadCandidateDocument,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['userProfile'] });
-      queryClient.invalidateQueries({ queryKey: ['atsReadiness'] });
+      queryClient.invalidateQueries({ queryKey: ['candidateProfile'] });
       setResumeUploadSuccess(true);
       setUploadError(null);
       setTimeout(() => setResumeUploadSuccess(false), 4000);
     },
     onError: (err) => {
-      setUploadError(err.message || 'Failed to process resume file.');
+      setUploadError(err.message || 'Failed to upload document.');
     }
   });
 
-  const handleSaveProfile = (e) => {
-    e.preventDefault();
+  const handleSave = (e) => {
+    if (e) e.preventDefault();
     updateMutation.mutate(formData);
   };
 
@@ -154,35 +200,82 @@ export const ProfilePage = () => {
     if (!file) return;
 
     const data = new FormData();
-    data.append('resume', file);
-    resumeMutation.mutate(data);
+    data.append('document', file);
+    data.append('type', 'resume');
+    documentMutation.mutate(data);
   };
 
   const handleAddSkill = (e) => {
     e.preventDefault();
-    if (newSkill.trim() && !formData.skills.includes(newSkill.trim())) {
-      setFormData(prev => ({ ...prev, skills: [...prev.skills, newSkill.trim()] }));
+    if (newSkill.trim() && !formData.professionalProfile.skills.includes(newSkill.trim())) {
+      setFormData(prev => ({
+        ...prev,
+        professionalProfile: {
+          ...prev.professionalProfile,
+          skills: [...prev.professionalProfile.skills, newSkill.trim()]
+        }
+      }));
       setNewSkill('');
     }
   };
 
   const handleRemoveSkill = (skillToRemove) => {
-    setFormData(prev => ({ ...prev, skills: prev.skills.filter(s => s !== skillToRemove) }));
+    setFormData(prev => ({
+      ...prev,
+      professionalProfile: {
+        ...prev.professionalProfile,
+        skills: prev.professionalProfile.skills.filter(s => s !== skillToRemove)
+      }
+    }));
   };
 
-  const readinessScore = readinessData?.readiness?.overallScore || profileData?.readiness?.overallScore || 92;
-  const assets = profileData?.profile?.assets || [];
+  const handleCreateExperience = async (e) => {
+    e.preventDefault();
+    if (!newExp.company || !newExp.title) return;
+    await addExperience(newExp);
+    queryClient.invalidateQueries({ queryKey: ['candidateProfile'] });
+    setShowAddExp(false);
+    setNewExp({ company: '', title: '', location: '', startDate: '', endDate: 'Present', current: true, description: '' });
+  };
+
+  const handleDeleteExperience = async (id) => {
+    await deleteExperience(id);
+    queryClient.invalidateQueries({ queryKey: ['candidateProfile'] });
+  };
+
+  const handleCreateEducation = async (e) => {
+    e.preventDefault();
+    if (!newEdu.institution || !newEdu.degree) return;
+    await addEducation(newEdu);
+    queryClient.invalidateQueries({ queryKey: ['candidateProfile'] });
+    setShowAddEdu(false);
+    setNewEdu({ institution: '', degree: '', fieldOfStudy: '', location: '', endDate: '' });
+  };
+
+  const handleDeleteEducation = async (id) => {
+    await deleteEducation(id);
+    queryClient.invalidateQueries({ queryKey: ['candidateProfile'] });
+  };
+
+  const readinessScore = readiness?.overallScore || 92;
+  const resumes = profile?.documents?.resumes || [];
+  const experiences = profile?.experience || [];
+  const educations = profile?.education || [];
 
   return (
-    <div className="space-y-8 max-w-5xl">
+    <div className="space-y-8 max-w-6xl">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-border-warm">
         <div className="space-y-1">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-subtle text-brand-primary text-xs font-semibold">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Single Source of Truth</span>
+          </div>
           <h1 className="font-serif text-3xl font-medium tracking-tight text-charcoal">
-            Candidate Knowledge Graph
+            Universal Candidate Profile
           </h1>
           <p className="text-xs sm:text-sm text-charcoal-muted">
-            The canonical source of truth for ATS auto-fill and skill alignment
+            Canonical profile utilized across Greenhouse, Lever, Workday, Ashby, and custom ATS automations
           </p>
         </div>
 
@@ -190,60 +283,45 @@ export const ProfilePage = () => {
           variant="primary"
           size="md"
           isLoading={updateMutation.isPending}
-          onClick={handleSaveProfile}
+          onClick={handleSave}
           icon={Save}
         >
-          {saveSuccess ? 'Changes Saved' : 'Save Changes'}
+          {saveSuccess ? 'Profile Saved' : 'Save Changes'}
         </Button>
       </div>
 
-      {/* Main Split: Readiness Scorecard (Left) & Knowledge Form (Right) */}
+      {/* Main Grid: Sidebar Scorecard & Multi-section Form */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-        {/* Left Column: ATS Scorecard & Resume Asset Studio */}
+        {/* Left Column: Readiness Scorecard & Document Studio */}
         <div className="space-y-6">
           {/* Readiness Scorecard */}
           <div className="card-warm p-6 space-y-4 bg-surface">
             <div className="flex items-center justify-between pb-3 border-b border-border-warm">
               <h3 className="text-sm font-semibold text-charcoal flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-brand-primary" />
-                ATS Readiness
+                Profile Completeness
               </h3>
               <Badge variant="brand" size="md" className="font-bold">
-                {readinessScore}% Score
+                {readinessScore}% Complete
               </Badge>
             </div>
 
             <div className="space-y-2.5 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-charcoal-muted flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-success" />
-                  Personal Information
-                </span>
-                <span className="font-semibold text-success">100%</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-charcoal-muted flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-success" />
-                  Work Authorization
-                </span>
-                <span className="font-semibold text-success">100%</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-charcoal-muted flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-success" />
-                  Technical Skills ({formData.skills.length})
-                </span>
-                <span className="font-semibold text-success">Verified</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-charcoal-muted flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-success" />
-                  Primary Resume PDF
-                </span>
-                <span className="font-semibold text-success">
-                  {assets.length > 0 ? 'Attached' : 'Ready'}
-                </span>
-              </div>
+              {readiness?.categories && Object.entries(readiness.categories).map(([key, cat]) => (
+                <div key={key} className="flex items-center justify-between">
+                  <span className="text-charcoal-muted flex items-center gap-2">
+                    {cat.status === 'Complete' ? (
+                      <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-warning shrink-0" />
+                    )}
+                    {cat.label}
+                  </span>
+                  <span className={`font-semibold ${cat.status === 'Complete' ? 'text-success' : 'text-warning'}`}>
+                    {cat.status}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -252,25 +330,24 @@ export const ProfilePage = () => {
             <div className="flex items-center justify-between pb-3 border-b border-border-warm">
               <h3 className="text-sm font-semibold text-charcoal flex items-center gap-2">
                 <FileText className="w-4 h-4 text-brand-primary" />
-                Resume Studio
+                Resume & Documents
               </h3>
-              <span className="text-[11px] text-charcoal-muted">PDF Format</span>
+              <span className="text-[11px] text-charcoal-muted">{resumes.length} attached</span>
             </div>
 
-            {/* Resume Upload Drag & Drop Area */}
             <label className="border-2 border-dashed border-border-warm hover:border-brand-primary/60 rounded-xl p-5 text-center flex flex-col items-center justify-center cursor-pointer transition-colors group bg-surface-soft/40">
               <Upload className="w-6 h-6 text-charcoal-muted group-hover:text-brand-primary mb-2 transition-colors" />
               <span className="text-xs font-semibold text-charcoal group-hover:text-brand-primary">
-                {resumeMutation.isPending ? 'Uploading & Parsing...' : 'Upload Updated Resume'}
+                {documentMutation.isPending ? 'Uploading Document...' : 'Upload Resume Document'}
               </span>
               <span className="text-[11px] text-charcoal-muted mt-0.5">
-                Drag PDF document or browse (Max 10MB)
+                PDF format (Max 10MB)
               </span>
               <input
                 type="file"
                 accept=".pdf"
                 className="hidden"
-                disabled={resumeMutation.isPending}
+                disabled={documentMutation.isPending}
                 onChange={handleFileUpload}
               />
             </label>
@@ -278,7 +355,7 @@ export const ProfilePage = () => {
             {resumeUploadSuccess && (
               <div className="p-3 rounded-lg bg-success-bg text-success border border-success/30 text-xs flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 shrink-0" />
-                <span>Resume parsed & synchronized to UCKGraph.</span>
+                <span>Document saved to secure vault.</span>
               </div>
             )}
 
@@ -289,19 +366,20 @@ export const ProfilePage = () => {
               </div>
             )}
 
-            {/* Existing attached assets */}
-            {assets.length > 0 && (
+            {resumes.length > 0 && (
               <div className="space-y-2 pt-2 border-t border-border-warm/60">
                 <div className="text-[11px] font-semibold uppercase text-charcoal-muted">
-                  Attached Assets
+                  Attached Resumes
                 </div>
-                {assets.map((asset, i) => (
-                  <div key={i} className="p-2.5 rounded-lg bg-surface-soft border border-border-warm flex items-center justify-between text-xs">
+                {resumes.map((doc, idx) => (
+                  <div key={doc.id || idx} className="p-2.5 rounded-lg bg-surface-soft border border-border-warm flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2 truncate">
                       <FileText className="w-4 h-4 text-brand-primary shrink-0" />
-                      <span className="truncate font-medium text-charcoal">{asset.name}</span>
+                      <span className="truncate font-medium text-charcoal">{doc.name}</span>
                     </div>
-                    <span className="text-[10px] text-charcoal-muted">v{asset.version || '1.0'}</span>
+                    {doc.isDefault && (
+                      <Badge variant="brand" size="xs">Primary</Badge>
+                    )}
                   </div>
                 ))}
               </div>
@@ -309,15 +387,17 @@ export const ProfilePage = () => {
           </div>
         </div>
 
-        {/* Right 2 Columns: Multi-section Profile Editor */}
+        {/* Right 2 Columns: Multi-category Form */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Navigation Tabs */}
+          {/* Section Navigation Tabs */}
           <div className="flex items-center gap-2 border-b border-border-warm pb-px overflow-x-auto">
             {[
-              { id: 'identity', label: 'Identity & Contact', icon: User },
-              { id: 'professional', label: 'Professional & Role', icon: Briefcase },
+              { id: 'identity', label: 'Identity & Location', icon: User },
+              { id: 'experience', label: 'Work Experience', icon: Briefcase },
+              { id: 'education', label: 'Education', icon: GraduationCap },
               { id: 'skills', label: 'Skills & Tech Stack', icon: Sparkles },
               { id: 'authorization', label: 'Work Authorization', icon: ShieldCheck },
+              { id: 'preferences', label: 'Preferences', icon: Sliders },
             ].map((tab) => {
               const Icon = tab.icon;
               return (
@@ -337,246 +417,510 @@ export const ProfilePage = () => {
             })}
           </div>
 
-          {/* Form Content */}
-          <form onSubmit={handleSaveProfile} className="card-warm p-6 sm:p-8 bg-surface space-y-6">
-            {activeTab === 'identity' && (
-              <div className="space-y-5">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <Input
-                    label="First Name"
-                    value={formData.identity.firstName}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      identity: { ...formData.identity, firstName: e.target.value }
-                    })}
-                  />
-                  <Input
-                    label="Last Name"
-                    value={formData.identity.lastName}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      identity: { ...formData.identity, lastName: e.target.value }
-                    })}
-                  />
-                </div>
+          {/* Tab 1: Identity & Location */}
+          {activeTab === 'identity' && (
+            <div className="card-warm p-6 sm:p-8 bg-surface space-y-6">
+              <h2 className="text-base font-semibold text-charcoal pb-3 border-b border-border-warm">
+                Personal Coordinates & Location
+              </h2>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <Input
-                    label="Email Address"
-                    type="email"
-                    value={formData.contact.email}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      contact: { ...formData.contact, email: e.target.value }
-                    })}
-                  />
-                  <Input
-                    label="Phone Number"
-                    type="tel"
-                    value={formData.contact.phone}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      contact: { ...formData.contact, phone: e.target.value }
-                    })}
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <Input
-                    label="LinkedIn Profile"
-                    value={formData.contact.linkedinUrl}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      contact: { ...formData.contact, linkedinUrl: e.target.value }
-                    })}
-                    placeholder="https://linkedin.com/in/username"
-                  />
-                  <Input
-                    label="GitHub Profile"
-                    value={formData.contact.githubUrl}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      contact: { ...formData.contact, githubUrl: e.target.value }
-                    })}
-                    placeholder="https://github.com/username"
-                  />
-                </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <Input
+                  label="First Name"
+                  value={formData.identity.firstName}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    identity: { ...formData.identity, firstName: e.target.value }
+                  })}
+                />
+                <Input
+                  label="Middle Name"
+                  value={formData.identity.middleName}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    identity: { ...formData.identity, middleName: e.target.value }
+                  })}
+                />
+                <Input
+                  label="Last Name"
+                  value={formData.identity.lastName}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    identity: { ...formData.identity, lastName: e.target.value }
+                  })}
+                />
               </div>
-            )}
 
-            {activeTab === 'professional' && (
-              <div className="space-y-5">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <Input
-                    label="Current Job Title"
-                    value={formData.professionalInfo.currentPosition}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      professionalInfo: { ...formData.professionalInfo, currentPosition: e.target.value }
-                    })}
-                    placeholder="Senior DevOps Engineer"
-                  />
-                  <Input
-                    label="Current Company"
-                    value={formData.professionalInfo.currentCompany}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      professionalInfo: { ...formData.professionalInfo, currentCompany: e.target.value }
-                    })}
-                    placeholder="Current Employer"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <Input
-                    label="Years of Experience"
-                    type="number"
-                    value={formData.professionalInfo.yearsExperience}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      professionalInfo: { ...formData.professionalInfo, yearsExperience: e.target.value }
-                    })}
-                  />
-                  <Input
-                    label="Target Annual Salary ($ USD)"
-                    type="number"
-                    value={formData.professionalInfo.expectedSalary}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      professionalInfo: { ...formData.professionalInfo, expectedSalary: e.target.value }
-                    })}
-                  />
-                </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Input
+                  label="Email Address"
+                  type="email"
+                  value={formData.identity.email}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    identity: { ...formData.identity, email: e.target.value }
+                  })}
+                />
+                <Input
+                  label="Phone Number"
+                  type="tel"
+                  value={formData.identity.phone}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    identity: { ...formData.identity, phone: e.target.value }
+                  })}
+                />
               </div>
-            )}
 
-            {activeTab === 'skills' && (
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-xs font-semibold text-charcoal mb-2">
-                    Active Skills ({formData.skills.length})
-                  </label>
-                  <div className="flex flex-wrap gap-2 p-4 rounded-xl bg-surface-soft border border-border-warm min-h-[100px]">
-                    {formData.skills.map((skill) => (
-                      <span
-                        key={skill}
-                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium bg-surface border border-border-warm text-charcoal shadow-2xs group"
-                      >
-                        <span>{skill}</span>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveSkill(skill)}
-                          className="text-charcoal-muted hover:text-danger ml-1 p-0.5"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Add new skill inline */}
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newSkill}
-                    onChange={(e) => setNewSkill(e.target.value)}
-                    placeholder="Add a technology (e.g. Terraform, Go, GraphQL)..."
-                    className="flex-1 text-xs bg-surface border border-border-warm rounded-lg px-3 py-2 text-charcoal focus:outline-none focus:ring-1 focus:ring-brand-primary"
-                  />
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={handleAddSkill}
-                    icon={Plus}
-                  >
-                    Add
-                  </Button>
-                </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <Input
+                  label="City"
+                  value={formData.location.city}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    location: { ...formData.location, city: e.target.value }
+                  })}
+                />
+                <Input
+                  label="State / Province"
+                  value={formData.location.state}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    location: { ...formData.location, state: e.target.value }
+                  })}
+                />
+                <Input
+                  label="Postal / Zip Code"
+                  value={formData.location.postalCode}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    location: { ...formData.location, postalCode: e.target.value }
+                  })}
+                />
               </div>
-            )}
 
-            {activeTab === 'authorization' && (
-              <div className="space-y-5">
-                <div className="p-4 rounded-xl bg-surface-soft border border-border-warm flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <div className="text-xs font-semibold text-charcoal">
-                      Authorized to work in target location
-                    </div>
-                    <p className="text-[11px] text-charcoal-muted">
-                      Eligible to work in the United States without restriction.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setFormData({
-                      ...formData,
-                      authorization: {
-                        ...formData.authorization,
-                        isAuthorizedInUS: !formData.authorization.isAuthorizedInUS
-                      }
-                    })}
-                    className={`w-10 h-6 rounded-full transition-colors relative cursor-pointer ${
-                      formData.authorization.isAuthorizedInUS ? 'bg-brand-primary' : 'bg-border-warm'
-                    }`}
-                  >
-                    <div
-                      className={`w-5 h-5 rounded-full bg-white transition-transform absolute top-0.5 left-0.5 shadow-xs ${
-                        formData.authorization.isAuthorizedInUS ? 'translate-x-4' : 'translate-x-0'
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                <div className="p-4 rounded-xl bg-surface-soft border border-border-warm flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <div className="text-xs font-semibold text-charcoal">
-                      Requires Visa Sponsorship
-                    </div>
-                    <p className="text-[11px] text-charcoal-muted">
-                      Requires H-1B, TN, or equivalent visa sponsorship now or in the future.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setFormData({
-                      ...formData,
-                      authorization: {
-                        ...formData.authorization,
-                        requiresSponsorshipNowOrFuture: !formData.authorization.requiresSponsorshipNowOrFuture
-                      }
-                    })}
-                    className={`w-10 h-6 rounded-full transition-colors relative cursor-pointer ${
-                      formData.authorization.requiresSponsorshipNowOrFuture ? 'bg-brand-primary' : 'bg-border-warm'
-                    }`}
-                  >
-                    <div
-                      className={`w-5 h-5 rounded-full bg-white transition-transform absolute top-0.5 left-0.5 shadow-xs ${
-                        formData.authorization.requiresSponsorshipNowOrFuture ? 'translate-x-4' : 'translate-x-0'
-                      }`}
-                    />
-                  </button>
-                </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-border-warm/60">
+                <Input
+                  label="LinkedIn Profile"
+                  value={formData.contact.linkedinUrl}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    contact: { ...formData.contact, linkedinUrl: e.target.value }
+                  })}
+                  placeholder="https://linkedin.com/in/username"
+                />
+                <Input
+                  label="GitHub Profile"
+                  value={formData.contact.githubUrl}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    contact: { ...formData.contact, githubUrl: e.target.value }
+                  })}
+                  placeholder="https://github.com/username"
+                />
               </div>
-            )}
-
-            {/* Bottom Save Bar */}
-            <div className="flex items-center justify-between pt-4 border-t border-border-warm">
-              <span className="text-xs text-charcoal-muted">
-                {saveSuccess && <span className="text-success font-medium">✓ Knowledge graph synchronized</span>}
-              </span>
-              <Button
-                type="submit"
-                variant="primary"
-                size="md"
-                isLoading={updateMutation.isPending}
-                icon={Save}
-              >
-                Save Knowledge Graph
-              </Button>
             </div>
-          </form>
+          )}
+
+          {/* Tab 2: Work Experience */}
+          {activeTab === 'experience' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-semibold text-charcoal">
+                  Professional Experience ({experiences.length})
+                </h2>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setShowAddExp(!showAddExp)}
+                  icon={Plus}
+                >
+                  Add Role
+                </Button>
+              </div>
+
+              {/* Add experience form */}
+              {showAddExp && (
+                <form onSubmit={handleCreateExperience} className="card-warm p-6 bg-surface space-y-4 border-brand-primary/40">
+                  <h3 className="text-sm font-semibold text-charcoal">Add Experience Record</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <Input
+                      label="Company Name"
+                      value={newExp.company}
+                      onChange={(e) => setNewExp({ ...newExp, company: e.target.value })}
+                      placeholder="e.g. Acme Corp"
+                      required
+                    />
+                    <Input
+                      label="Job Title"
+                      value={newExp.title}
+                      onChange={(e) => setNewExp({ ...newExp, title: e.target.value })}
+                      placeholder="e.g. Senior Software Engineer"
+                      required
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <Input
+                      label="Location"
+                      value={newExp.location}
+                      onChange={(e) => setNewExp({ ...newExp, location: e.target.value })}
+                      placeholder="e.g. Remote, San Francisco"
+                    />
+                    <Input
+                      label="Start Date"
+                      value={newExp.startDate}
+                      onChange={(e) => setNewExp({ ...newExp, startDate: e.target.value })}
+                      placeholder="YYYY-MM"
+                      required
+                    />
+                    <Input
+                      label="End Date"
+                      value={newExp.endDate}
+                      onChange={(e) => setNewExp({ ...newExp, endDate: e.target.value })}
+                      placeholder="YYYY-MM or Present"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button variant="ghost" size="sm" type="button" onClick={() => setShowAddExp(false)}>
+                      Cancel
+                    </Button>
+                    <Button variant="primary" size="sm" type="submit">
+                      Save Role
+                    </Button>
+                  </div>
+                </form>
+              )}
+
+              {/* Experience list */}
+              {experiences.length === 0 ? (
+                <div className="card-warm p-8 text-center text-charcoal-muted text-xs">
+                  No work experience entries added yet. Click "Add Role" to add your career history.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {experiences.map((exp) => (
+                    <div key={exp._id || exp.id} className="card-warm p-5 bg-surface flex items-start justify-between gap-4">
+                      <div className="space-y-1">
+                        <div className="text-sm font-semibold text-charcoal flex items-center gap-2">
+                          <Building2 className="w-4 h-4 text-brand-primary" />
+                          {exp.title}
+                          <span className="text-charcoal-muted font-normal">at {exp.company}</span>
+                        </div>
+                        <div className="text-xs text-charcoal-muted flex items-center gap-3">
+                          <span>{exp.startDate} – {exp.endDate || 'Present'}</span>
+                          {exp.location && <span>• {exp.location}</span>}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteExperience(exp._id || exp.id)}
+                        className="p-1.5 rounded-lg text-charcoal-muted hover:text-danger hover:bg-danger-bg transition-colors cursor-pointer"
+                        title="Delete entry"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Tab 3: Education */}
+          {activeTab === 'education' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-semibold text-charcoal">
+                  Education Degrees ({educations.length})
+                </h2>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setShowAddEdu(!showAddEdu)}
+                  icon={Plus}
+                >
+                  Add Degree
+                </Button>
+              </div>
+
+              {/* Add education form */}
+              {showAddEdu && (
+                <form onSubmit={handleCreateEducation} className="card-warm p-6 bg-surface space-y-4 border-brand-primary/40">
+                  <h3 className="text-sm font-semibold text-charcoal">Add Education Record</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <Input
+                      label="Institution / University"
+                      value={newEdu.institution}
+                      onChange={(e) => setNewEdu({ ...newEdu, institution: e.target.value })}
+                      placeholder="e.g. Stanford University"
+                      required
+                    />
+                    <Input
+                      label="Degree"
+                      value={newEdu.degree}
+                      onChange={(e) => setNewEdu({ ...newEdu, degree: e.target.value })}
+                      placeholder="e.g. Bachelor of Science"
+                      required
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <Input
+                      label="Field of Study / Major"
+                      value={newEdu.fieldOfStudy}
+                      onChange={(e) => setNewEdu({ ...newEdu, fieldOfStudy: e.target.value })}
+                      placeholder="e.g. Computer Science"
+                      required
+                    />
+                    <Input
+                      label="Graduation Year"
+                      value={newEdu.endDate}
+                      onChange={(e) => setNewEdu({ ...newEdu, endDate: e.target.value })}
+                      placeholder="e.g. 2022"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button variant="ghost" size="sm" type="button" onClick={() => setShowAddEdu(false)}>
+                      Cancel
+                    </Button>
+                    <Button variant="primary" size="sm" type="submit">
+                      Save Degree
+                    </Button>
+                  </div>
+                </form>
+              )}
+
+              {/* Education list */}
+              {educations.length === 0 ? (
+                <div className="card-warm p-8 text-center text-charcoal-muted text-xs">
+                  No education records added yet. Click "Add Degree" to record your academic qualifications.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {educations.map((edu) => (
+                    <div key={edu._id || edu.id} className="card-warm p-5 bg-surface flex items-start justify-between gap-4">
+                      <div className="space-y-1">
+                        <div className="text-sm font-semibold text-charcoal flex items-center gap-2">
+                          <GraduationCap className="w-4 h-4 text-brand-primary" />
+                          {edu.degree} in {edu.fieldOfStudy}
+                        </div>
+                        <div className="text-xs text-charcoal-muted">
+                          {edu.institution} {edu.endDate && `• Class of ${edu.endDate}`}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteEducation(edu._id || edu.id)}
+                        className="p-1.5 rounded-lg text-charcoal-muted hover:text-danger hover:bg-danger-bg transition-colors cursor-pointer"
+                        title="Delete degree"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Tab 4: Skills & Tech Stack */}
+          {activeTab === 'skills' && (
+            <div className="card-warm p-6 sm:p-8 bg-surface space-y-6">
+              <h2 className="text-base font-semibold text-charcoal pb-3 border-b border-border-warm">
+                Technical Stack & Skills Taxonomy
+              </h2>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Input
+                  label="Headline / Current Position"
+                  value={formData.professionalProfile.currentTitle}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    professionalProfile: { ...formData.professionalProfile, currentTitle: e.target.value }
+                  })}
+                />
+                <Input
+                  label="Total Years of Experience"
+                  type="number"
+                  value={formData.professionalProfile.yearsOfExperience}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    professionalProfile: { ...formData.professionalProfile, yearsOfExperience: Number(e.target.value) }
+                  })}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-charcoal mb-2">
+                  Active Verified Skills ({formData.professionalProfile.skills.length})
+                </label>
+                <div className="flex flex-wrap gap-2 p-4 rounded-xl bg-surface-soft border border-border-warm min-h-[100px]">
+                  {formData.professionalProfile.skills.map((skill) => (
+                    <span
+                      key={skill}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium bg-surface border border-border-warm text-charcoal shadow-2xs group"
+                    >
+                      <span>{skill}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveSkill(skill)}
+                        className="text-charcoal-muted hover:text-danger ml-1 p-0.5 cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Inline add skill */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newSkill}
+                  onChange={(e) => setNewSkill(e.target.value)}
+                  placeholder="Add technology (e.g. Terraform, Kubernetes, Go, Python)..."
+                  className="flex-1 text-xs bg-surface border border-border-warm rounded-lg px-3 py-2 text-charcoal focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleAddSkill}
+                  icon={Plus}
+                >
+                  Add Skill
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Tab 5: Work Authorization & Legal */}
+          {activeTab === 'authorization' && (
+            <div className="card-warm p-6 sm:p-8 bg-surface space-y-6">
+              <div className="flex items-center justify-between pb-3 border-b border-border-warm">
+                <div>
+                  <h2 className="text-base font-semibold text-charcoal">
+                    Work Authorization & Compliance
+                  </h2>
+                  <p className="text-xs text-charcoal-muted mt-0.5">
+                    Strictly explicit answers. Never inferred or guessed by AI.
+                  </p>
+                </div>
+                <Badge variant="brand" size="sm">User Verified</Badge>
+              </div>
+
+              <div className="space-y-4">
+                <div className="p-4 rounded-xl bg-surface-soft border border-border-warm flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-semibold text-charcoal">
+                      Authorized to work in the United States
+                    </div>
+                    <p className="text-[11px] text-charcoal-muted">
+                      Legally eligible to work without restriction in target country.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({
+                      ...formData,
+                      workAuthorization: {
+                        ...formData.workAuthorization,
+                        authorizedToWorkInUS: !formData.workAuthorization.authorizedToWorkInUS
+                      }
+                    })}
+                    className={`w-10 h-6 rounded-full transition-colors relative cursor-pointer ${
+                      formData.workAuthorization.authorizedToWorkInUS ? 'bg-brand-primary' : 'bg-border-warm'
+                    }`}
+                  >
+                    <div
+                      className={`w-5 h-5 rounded-full bg-white transition-transform absolute top-0.5 left-0.5 shadow-xs ${
+                        formData.workAuthorization.authorizedToWorkInUS ? 'translate-x-4' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                <div className="p-4 rounded-xl bg-surface-soft border border-border-warm flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-semibold text-charcoal">
+                      Requires Visa Sponsorship Now
+                    </div>
+                    <p className="text-[11px] text-charcoal-muted">
+                      Requires employer sponsorship for H-1B, TN, O-1, or equivalent.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({
+                      ...formData,
+                      workAuthorization: {
+                        ...formData.workAuthorization,
+                        requiresSponsorshipNow: !formData.workAuthorization.requiresSponsorshipNow
+                      }
+                    })}
+                    className={`w-10 h-6 rounded-full transition-colors relative cursor-pointer ${
+                      formData.workAuthorization.requiresSponsorshipNow ? 'bg-brand-primary' : 'bg-border-warm'
+                    }`}
+                  >
+                    <div
+                      className={`w-5 h-5 rounded-full bg-white transition-transform absolute top-0.5 left-0.5 shadow-xs ${
+                        formData.workAuthorization.requiresSponsorshipNow ? 'translate-x-4' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                  <Input
+                    label="Citizenship / Visa Type"
+                    value={formData.workAuthorization.visaType}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      workAuthorization: { ...formData.workAuthorization, visaType: e.target.value }
+                    })}
+                    placeholder="e.g. US Citizen, Green Card, OPT"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Tab 6: Preferences */}
+          {activeTab === 'preferences' && (
+            <div className="card-warm p-6 sm:p-8 bg-surface space-y-6">
+              <h2 className="text-base font-semibold text-charcoal pb-3 border-b border-border-warm">
+                Target Requisitions & Blocklists
+              </h2>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Input
+                  label="Minimum Target Salary ($ USD)"
+                  type="number"
+                  value={formData.preferences.minimumSalary}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    preferences: { ...formData.preferences, minimumSalary: Number(e.target.value) }
+                  })}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Save footer */}
+          <div className="flex items-center justify-between pt-4 border-t border-border-warm">
+            <span className="text-xs text-charcoal-muted">
+              {saveSuccess && <span className="text-success font-semibold">✓ Canonical profile synchronized across ATS adapters</span>}
+            </span>
+            <Button
+              variant="primary"
+              size="md"
+              isLoading={updateMutation.isPending}
+              onClick={handleSave}
+              icon={Save}
+            >
+              Save Profile
+            </Button>
+          </div>
         </div>
       </div>
     </div>

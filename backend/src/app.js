@@ -69,6 +69,7 @@ const adminRoutes = require('./routes/admin.routes');
 const analyticsRoutes = require('./routes/analyticsRoutes');
 const automationRoutes = require('./routes/automationRoutes');
 const userRoutes = require('./routes/userRoutes');
+const candidateRoutes = require('./routes/candidate.routes');
 const discoveryRoutes = require('./routes/discoveryRoutes');
 const autoApplyRoutes = require('./routes/autoApplyRoutes');
 
@@ -88,9 +89,11 @@ app.use('/api/debug', debugRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/automation', automationRoutes);
+app.use('/api/candidate', candidateRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/discovery', discoveryRoutes);
 app.use('/api/auto-apply', autoApplyRoutes);
+
 
 // Swagger UI Documentation
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));

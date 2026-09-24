@@ -31,8 +31,9 @@ const config = {
     uri: MONGODB_URI,
     options: {
       maxPoolSize: parseInt(process.env.MONGO_MAX_POOL_SIZE, 10) || 20,
-      minPoolSize: parseInt(process.env.MONGO_MIN_POOL_SIZE, 10) || 5,
-      serverSelectionTimeoutMS: 5000,
+      minPoolSize: parseInt(process.env.MONGO_MIN_POOL_SIZE, 10) || 1,
+      serverSelectionTimeoutMS: 15000,
+      connectTimeoutMS: 20000,
       socketTimeoutMS: 45000
     }
   },

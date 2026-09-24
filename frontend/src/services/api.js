@@ -61,15 +61,32 @@ export const fetchDiscoveredJobs = (params) => api.get('/discovery/jobs', { para
 export const fetchAnalyticsSources = () => api.get('/analytics/sources').then((res) => res.data.data);
 export const fetchApplicationAnalytics = (userId) => api.get('/analytics/dashboard', { params: { userId } }).then((res) => res.data);
 
-// User Profile & Registry Endpoints
-export const fetchProfile = () => api.get('/user/profile').then((res) => res.data);
-export const updateProfile = (profileData) => api.patch('/user/profile', profileData).then((res) => res.data);
-export const uploadResume = (formData) => api.post('/user/resume', formData, {
+// Canonical Candidate Profile Endpoints
+export const fetchCandidateProfile = () => api.get('/candidate/profile').then((res) => res.data);
+export const updateCandidateProfile = (profileData) => api.put('/candidate/profile', profileData).then((res) => res.data);
+export const fetchCandidateReadiness = () => api.get('/candidate/readiness').then((res) => res.data);
+export const addExperience = (data) => api.post('/candidate/experience', data).then((res) => res.data);
+export const updateExperience = (id, data) => api.put(`/candidate/experience/${id}`, data).then((res) => res.data);
+export const deleteExperience = (id) => api.delete(`/candidate/experience/${id}`).then((res) => res.data);
+export const addEducation = (data) => api.post('/candidate/education', data).then((res) => res.data);
+export const updateEducation = (id, data) => api.put(`/candidate/education/${id}`, data).then((res) => res.data);
+export const deleteEducation = (id) => api.delete(`/candidate/education/${id}`).then((res) => res.data);
+export const uploadCandidateDocument = (formData) => api.post('/candidate/documents', formData, {
+  headers: { 'Content-Type': 'multipart/form-data' }
+}).then((res) => res.data);
+export const updateApplicationAnswer = (data) => api.put('/candidate/application-answers', data).then((res) => res.data);
+export const runPreflight = (payload) => api.post('/candidate/preflight', payload).then((res) => res.data);
+
+// User Profile & Registry Endpoints (Aliases / Backwards compatibility)
+export const fetchProfile = () => api.get('/candidate/profile').then((res) => res.data);
+export const updateProfile = (profileData) => api.put('/candidate/profile', profileData).then((res) => res.data);
+export const uploadResume = (formData) => api.post('/candidate/documents', formData, {
   headers: { 'Content-Type': 'multipart/form-data' }
 }).then((res) => res.data);
 export const fetchFieldRegistry = () => api.get('/user/registry').then((res) => res.data);
-export const fetchATSReadiness = () => api.get('/user/readiness').then((res) => res.data);
+export const fetchATSReadiness = () => api.get('/candidate/readiness').then((res) => res.data);
 export const fetchProfileHistory = () => api.get('/user/history').then((res) => res.data);
 
 export default api;
+
 
