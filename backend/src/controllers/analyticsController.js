@@ -1,21 +1,13 @@
 const Job = require('../models/Job');
+const { buildJobFilter } = require('../utils/filterBuilder');
 const logger = require('../config/logger');
-
-// Global 30-Day Expiration Date
-const thirtyDaysAgo = new Date();
-thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-// US-First & Expiration Filter Rule
-const activeUsFilter = {
-  postedAt: { $gte: thirtyDaysAgo },
-  isUSJob: true
-};
 
 // GET /api/analytics/sources
 exports.getSources = async (req, res, next) => {
   try {
+    const baseFilter = buildJobFilter({});
     const sources = await Job.aggregate([
-      { $match: { source: { $ne: null }, ...activeUsFilter } },
+      { $match: { source: { $ne: null, $nin: ['', 'Unknown'] }, ...baseFilter } },
       {
         $group: {
           _id: "$source",

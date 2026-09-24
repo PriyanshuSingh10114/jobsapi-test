@@ -15,9 +15,9 @@ const buildJobFilter = (queryParams = {}) => {
   const andConditions = [];
 
   // 1. Job Region Filtering
-  if (jobRegion && jobRegion !== 'All Jobs') {
+  if (jobRegion && jobRegion !== 'All Jobs' && jobRegion !== 'All') {
     if (jobRegion === 'US Jobs') {
-      andConditions.push({ jobRegion: { $in: ['US Onsite', 'US Hybrid', 'US Remote'] } });
+      andConditions.push({ jobRegion: { $in: ['US Onsite', 'US Hybrid', 'US Remote', 'Onsite', 'Hybrid', 'Remote'] } });
     } else {
       andConditions.push({ jobRegion: String(jobRegion) });
     }
@@ -50,7 +50,7 @@ const buildJobFilter = (queryParams = {}) => {
     const escapedLocation = escapeRegex(String(location).trim());
     andConditions.push({ location: { $regex: new RegExp(escapedLocation, 'i') } });
   }
-  if (jobType) {
+  if (jobType && jobType !== 'All' && jobType !== 'Any Type') {
     const parsedJobType = escapeRegex(String(jobType).replace(/-/g, ' ').trim());
     andConditions.push({
       $or: [
@@ -59,7 +59,7 @@ const buildJobFilter = (queryParams = {}) => {
       ]
     });
   }
-  if (experienceLevel) {
+  if (experienceLevel && experienceLevel !== 'All') {
     const escapedLevel = escapeRegex(String(experienceLevel).trim());
     andConditions.push({ experienceLevel: { $regex: new RegExp(escapedLevel, 'i') } });
   }
@@ -68,30 +68,39 @@ const buildJobFilter = (queryParams = {}) => {
   if (remote === 'true' || remote === true) {
     andConditions.push({ remote: true });
   }
-  if (source) {
+  if (source && source !== 'All') {
     const escapedSource = escapeRegex(String(source).trim());
     andConditions.push({ source: { $regex: new RegExp(`^${escapedSource}$`, 'i') } });
   }
 
-  // 5. Global Retention / Expiration Cutoff Filter
-  const retentionDays = config.retentionDays || 30;
-  const date = new Date();
-  if (datePosted === 'Past 24 hours') {
-    date.setDate(date.getDate() - 1);
-  } else if (datePosted === 'Past Week') {
-    date.setDate(date.getDate() - 7);
-  } else {
-    date.setDate(date.getDate() - retentionDays);
+  // 5. Date Posted Filter (Applied only when user explicitly filters by date)
+  if (datePosted && datePosted !== 'All' && datePosted !== 'All Time') {
+    const date = new Date();
+    if (datePosted === 'Past 24 hours') {
+      date.setDate(date.getDate() - 1);
+      andConditions.push({ postedAt: { $gte: date } });
+    } else if (datePosted === 'Past Week') {
+      date.setDate(date.getDate() - 7);
+      andConditions.push({ postedAt: { $gte: date } });
+    } else if (datePosted === 'Past Month') {
+      date.setDate(date.getDate() - 30);
+      andConditions.push({ postedAt: { $gte: date } });
+    }
   }
-  andConditions.push({ postedAt: { $gte: date } });
 
-  // 6. Global US-First Business Rule (Strictly US-Only when enabled)
+  // 6. Global US-First Business Rule (Permits active US jobs)
   if (config.strictUSMode !== false) {
-    andConditions.push({ isUSJob: true });
+    andConditions.push({
+      $or: [
+        { isUSJob: true },
+        { country: 'United States' },
+        { isUSJob: { $exists: false } }
+      ]
+    });
   }
 
-  // 7. Only active jobs
-  andConditions.push({ is_active: true });
+  // 7. Active jobs filter
+  andConditions.push({ is_active: { $ne: false } });
 
   if (andConditions.length > 0) {
     query.$and = andConditions;
