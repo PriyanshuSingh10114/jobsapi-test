@@ -70,17 +70,20 @@ export const SkillTrendsPage = () => {
         <div className="h-72 w-full">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={skillData} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
-              <XAxis type="number" tick={{ fontSize: 11, fill: '#6D726B' }} axisLine={{ stroke: '#DDDAD2' }} />
-              <YAxis dataKey="skill" type="category" tick={{ fontSize: 12, fill: '#20251F' }} axisLine={{ stroke: '#DDDAD2' }} />
+              <XAxis type="number" tick={{ fontSize: 11, fill: 'var(--charcoal-muted)' }} axisLine={{ stroke: 'var(--border-warm)' }} />
+              <YAxis dataKey="skill" type="category" tick={{ fontSize: 12, fill: 'var(--charcoal)' }} axisLine={{ stroke: 'var(--border-warm)' }} />
               <Tooltip
-                contentStyle={{ backgroundColor: '#FFFFFF', borderColor: '#DDDAD2', borderRadius: '8px', fontSize: '12px' }}
-                cursor={{ fill: 'rgba(35, 75, 54, 0.05)' }}
+                contentStyle={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border-warm)', color: 'var(--charcoal)', borderRadius: '8px', fontSize: '12px' }}
+                itemStyle={{ color: 'var(--charcoal)' }}
+                labelStyle={{ color: 'var(--charcoal)' }}
+                cursor={{ fill: 'rgba(126, 152, 127, 0.1)' }}
               />
-              <Bar dataKey="count" fill="#234B36" radius={[0, 6, 6, 0]} />
+              <Bar dataKey="count" fill="var(--brand-primary)" radius={[0, 6, 6, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
       </div>
+
 
       {/* Detailed Skill Table */}
       <div className="card-warm overflow-hidden bg-surface">

@@ -174,13 +174,15 @@ export const InsightsPage = () => {
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={sourceChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#6D726B' }} axisLine={{ stroke: '#DDDAD2' }} />
-                <YAxis tick={{ fontSize: 11, fill: '#6D726B' }} axisLine={{ stroke: '#DDDAD2' }} />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--charcoal-muted)' }} axisLine={{ stroke: 'var(--border-warm)' }} />
+                <YAxis tick={{ fontSize: 11, fill: 'var(--charcoal-muted)' }} axisLine={{ stroke: 'var(--border-warm)' }} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: '#FFFFFF', borderColor: '#DDDAD2', borderRadius: '8px', fontSize: '12px' }}
-                  cursor={{ fill: 'rgba(35, 75, 54, 0.05)' }}
+                  contentStyle={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border-warm)', color: 'var(--charcoal)', borderRadius: '8px', fontSize: '12px' }}
+                  itemStyle={{ color: 'var(--charcoal)' }}
+                  labelStyle={{ color: 'var(--charcoal)' }}
+                  cursor={{ fill: 'rgba(126, 152, 127, 0.1)' }}
                 />
-                <Bar dataKey="count" fill="#234B36" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="count" fill="var(--brand-primary)" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -214,11 +216,14 @@ export const InsightsPage = () => {
                   ))}
                 </Pie>
                 <Tooltip
-                  contentStyle={{ backgroundColor: '#FFFFFF', borderColor: '#DDDAD2', borderRadius: '8px', fontSize: '12px' }}
+                  contentStyle={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border-warm)', color: 'var(--charcoal)', borderRadius: '8px', fontSize: '12px' }}
+                  itemStyle={{ color: 'var(--charcoal)' }}
+                  labelStyle={{ color: 'var(--charcoal)' }}
                 />
               </PieChart>
             </ResponsiveContainer>
           </div>
+
 
           <div className="space-y-2 pt-2 text-xs">
             <div className="flex items-center justify-between">
